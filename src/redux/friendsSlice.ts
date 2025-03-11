@@ -154,20 +154,29 @@ export const addFriend = createAsyncThunk(
 export const acceptFriendRequest = createAsyncThunk(
   'friends/acceptFriendRequest',
   async (requestId: string) => {
-    const db = firestore();
-    const requestRef = db.collection('friends').doc(requestId);
-    
-    await requestRef.update({
-      status: 'accepted'
-    });
-    
-    const updatedRequest = await requestRef.get();
-    
-    return {
-      id: updatedRequest.id,
-      ...updatedRequest.data(),
-      createdAt: updatedRequest.data().createdAt.toDate(),
-    } as Friend;
+    try {
+      const db = firestore();
+      const requestRef = db.collection('friends').doc(requestId);
+      
+      await requestRef.update({
+        status: 'accepted'
+      });
+      
+      const updatedRequest = await requestRef.get();
+      
+      if (!updatedRequest.exists) {
+        throw new Error('Friend request not found');
+      }
+      
+      return {
+        id: updatedRequest.id,
+        ...updatedRequest.data(),
+        createdAt: updatedRequest.data()?.createdAt?.toDate() || new Date(),
+      } as Friend;
+    } catch (error: any) {
+      console.error('Error accepting friend request:', error);
+      throw error;
+    }
   }
 );
 
@@ -175,10 +184,15 @@ export const acceptFriendRequest = createAsyncThunk(
 export const rejectFriendRequest = createAsyncThunk(
   'friends/rejectFriendRequest',
   async (requestId: string) => {
-    const db = firestore();
-    await db.collection('friends').doc(requestId).delete();
-    
-    return requestId;
+    try {
+      const db = firestore();
+      await db.collection('friends').doc(requestId).delete();
+      
+      return requestId;
+    } catch (error: any) {
+      console.error('Error rejecting friend request:', error);
+      throw error;
+    }
   }
 );
 

@@ -13,7 +13,13 @@ import {
 } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '../redux/store';
-import { fetchFriends, addFriend, generateInviteLink } from '../redux/friendsSlice';
+import { 
+  fetchFriends, 
+  addFriend, 
+  generateInviteLink, 
+  acceptFriendRequest,
+  rejectFriendRequest 
+} from '../redux/friendsSlice';
 import { useTheme } from '../themes/ThemeProvider';
 import { ThemeText } from '../components/ThemeText';
 import { CustomButton } from '../components/CustomButton';
@@ -114,6 +120,24 @@ export const FriendsScreen = () => {
     }
   };
 
+  const handleAcceptRequest = async (requestId: string) => {
+    try {
+      await dispatch(acceptFriendRequest(requestId)).unwrap();
+      Alert.alert('Success', 'Friend request accepted');
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to accept friend request');
+    }
+  };
+
+  const handleRejectRequest = async (requestId: string) => {
+    try {
+      await dispatch(rejectFriendRequest(requestId)).unwrap();
+      Alert.alert('Success', 'Friend request rejected');
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to reject friend request');
+    }
+  };
+
   const renderFriendItem = ({ item }: { item: any }) => {
     // Determine if this is a sent or received friendship
     const isSent = item.userId === user?.id;
@@ -126,6 +150,7 @@ export const FriendsScreen = () => {
       
     const initial = displayName.charAt(0).toUpperCase();
     const isPending = item.status === 'pending';
+    const isIncomingRequest = isPending && !isSent;
     
     return (
       <Card style={styles.friendCard}>
@@ -146,15 +171,33 @@ export const FriendsScreen = () => {
                 <View style={styles.statusContainer}>
                   <Icon name="clock-outline" size={12} color={theme.colors.notification} />
                   <ThemeText variant="caption" style={{ color: theme.colors.notification, marginLeft: 4 }}>
-                    Pending
+                    {isIncomingRequest ? 'Request Received' : 'Pending'}
                   </ThemeText>
                 </View>
               )}
             </View>
           </View>
-          <TouchableOpacity style={styles.moreButton}>
-            <Icon name="dots-vertical" size={20} color={theme.colors.text} />
-          </TouchableOpacity>
+          
+          {isIncomingRequest ? (
+            <View style={styles.requestActions}>
+              <TouchableOpacity 
+                style={[styles.actionButton, styles.acceptButton]} 
+                onPress={() => handleAcceptRequest(item.id)}
+              >
+                <Icon name="check" size={18} color={theme.colors.success} />
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.actionButton, styles.rejectButton]}
+                onPress={() => handleRejectRequest(item.id)}
+              >
+                <Icon name="close" size={18} color={theme.colors.error} />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity style={styles.moreButton}>
+              <Icon name="dots-vertical" size={20} color={theme.colors.text} />
+            </TouchableOpacity>
+          )}
         </View>
       </Card>
     );
@@ -217,7 +260,7 @@ export const FriendsScreen = () => {
         </View>
       ) : (
         <FlatList
-          data={[...friends, ...incomingRequests]}
+          data={[...friends]}
           renderItem={renderFriendItem}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
@@ -450,6 +493,24 @@ const styles = StyleSheet.create({
   },
   generateButton: {
     marginTop: 20,
+  },
+  requestActions: {
+    flexDirection: 'row',
+  },
+  actionButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+    borderWidth: 1,
+  },
+  acceptButton: {
+    borderColor: '#4CAF50',
+  },
+  rejectButton: {
+    borderColor: '#F44336',
   },
 });
 
