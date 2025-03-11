@@ -17,6 +17,7 @@ import GroupsScreen from '../screens/GroupsScreen';
 import GroupDetailScreen from '../screens/GroupDetailScreen';
 import GroupMembersScreen from '../screens/GroupMembersScreen';
 import SettleUpScreen from '../screens/SettleUpScreen';
+import AddExpenseScreen from '../screens/AddExpenseScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -142,6 +143,13 @@ export const AppNavigator = () => {
               options={{ 
                 title: 'Settle Up',
                 headerBackTitle: 'Back'
+              }}
+            />
+            <Stack.Screen
+              name="AddExpense"
+              component={AddExpenseScreen}
+              options={{ 
+                headerShown: false
               }}
             />
           </>

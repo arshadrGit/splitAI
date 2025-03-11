@@ -200,7 +200,7 @@ export const GroupDetailScreen = ({ route, navigation }: any) => {
         leftIcon="arrow-left"
         onLeftPress={() => navigation.goBack()}
         rightIcon="plus"
-        onRightPress={() => setShowAddExpense(true)}
+        onRightPress={() => navigation.navigate('AddExpense', { groupId })}
       />
       
       <Card style={styles.summaryCard}>
@@ -235,7 +235,7 @@ export const GroupDetailScreen = ({ route, navigation }: any) => {
       <View style={styles.expensesContainer}>
         <View style={styles.sectionHeader}>
           <ThemeText variant="subtitle" style={styles.sectionTitle}>Expenses</ThemeText>
-          <TouchableOpacity onPress={() => setShowAddExpense(true)}>
+          <TouchableOpacity onPress={() => navigation.navigate('AddExpense', { groupId })}>
             <Icon name="plus" size={24} color={theme.colors.primary} />
           </TouchableOpacity>
         </View>
@@ -254,211 +254,16 @@ export const GroupDetailScreen = ({ route, navigation }: any) => {
                 <ThemeText style={styles.emptyText}>No expenses yet</ThemeText>
                 <CustomButton
                   title="Add an Expense"
-                  onPress={() => setShowAddExpense(true)}
+                  onPress={() => navigation.navigate('AddExpense', { groupId })}
                   variant="outline"
                   style={styles.addExpenseButton}
+                  icon={<Icon name="plus" size={18} color={theme.colors.primary} />}
                 />
               </View>
             }
           />
         )}
       </View>
-      
-      {/* Add Expense Modal */}
-      <Modal
-        visible={showAddExpense}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setShowAddExpense(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: theme.colors.card }]}>
-            <View style={styles.modalHeader}>
-              <ThemeText variant="title">Add an Expense</ThemeText>
-              <TouchableOpacity onPress={() => setShowAddExpense(false)}>
-                <Icon name="close" size={24} color={theme.colors.text} />
-              </TouchableOpacity>
-            </View>
-            
-            <ScrollView>
-              <View style={styles.formGroup}>
-                <ThemeText style={styles.label}>Description</ThemeText>
-                <TextInput
-                  style={[styles.input, { 
-                    borderColor: theme.colors.border,
-                    color: theme.colors.text,
-                    backgroundColor: theme.colors.background
-                  }]}
-                  placeholder="e.g., Dinner, Groceries"
-                  placeholderTextColor={theme.colors.placeholder}
-                  value={description}
-                  onChangeText={setDescription}
-                />
-              </View>
-              
-              <View style={styles.formGroup}>
-                <ThemeText style={styles.label}>Amount</ThemeText>
-                <TextInput
-                  style={[styles.input, { 
-                    borderColor: theme.colors.border,
-                    color: theme.colors.text,
-                    backgroundColor: theme.colors.background
-                  }]}
-                  placeholder="0.00"
-                  placeholderTextColor={theme.colors.placeholder}
-                  value={amount}
-                  onChangeText={setAmount}
-                  keyboardType="decimal-pad"
-                />
-              </View>
-              
-              <View style={styles.formGroup}>
-                <ThemeText style={styles.label}>Date</ThemeText>
-                <TouchableOpacity 
-                  style={[styles.dateInput, { 
-                    borderColor: theme.colors.border,
-                    backgroundColor: theme.colors.background
-                  }]}
-                  onPress={() => setShowDatePicker(true)}
-                >
-                  <ThemeText>
-                    {date.toLocaleDateString()}
-                  </ThemeText>
-                  <Icon name="calendar" size={20} color={theme.colors.text} />
-                </TouchableOpacity>
-                {showDatePicker && (
-                  <DateTimePicker
-                    value={date}
-                    mode="date"
-                    display="default"
-                    onChange={(event, selectedDate) => {
-                      setShowDatePicker(false);
-                      if (selectedDate) {
-                        setDate(selectedDate);
-                      }
-                    }}
-                  />
-                )}
-              </View>
-              
-              <View style={styles.formGroup}>
-                <ThemeText style={styles.label}>Paid by</ThemeText>
-                <View style={[styles.selectContainer, { 
-                  borderColor: theme.colors.border,
-                  backgroundColor: theme.colors.background
-                }]}>
-                  {currentGroup.members.map(memberId => (
-                    <TouchableOpacity
-                      key={memberId}
-                      style={[
-                        styles.selectOption,
-                        paidBy === memberId && { 
-                          backgroundColor: theme.colors.primary,
-                        }
-                      ]}
-                      onPress={() => setPaidBy(memberId)}
-                    >
-                      <ThemeText style={[
-                        styles.selectOptionText,
-                        paidBy === memberId && { color: '#FFFFFF' }
-                      ]}>
-                        {memberId === user?.id ? 'You' : memberId}
-                      </ThemeText>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-              
-              <View style={styles.formGroup}>
-                <ThemeText style={styles.label}>Split Type</ThemeText>
-                <View style={styles.splitTypeContainer}>
-                  <TouchableOpacity
-                    style={[
-                      styles.splitTypeOption,
-                      splitType === 'equal' && { 
-                        backgroundColor: theme.colors.primary,
-                      }
-                    ]}
-                    onPress={() => handleSplitTypeChange('equal')}
-                  >
-                    <Icon 
-                      name="equal" 
-                      size={20} 
-                      color={splitType === 'equal' ? '#FFFFFF' : theme.colors.text} 
-                    />
-                    <ThemeText style={[
-                      styles.splitTypeText,
-                      splitType === 'equal' && { color: '#FFFFFF' }
-                    ]}>
-                      Equal
-                    </ThemeText>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity
-                    style={[
-                      styles.splitTypeOption,
-                      splitType === 'custom' && { 
-                        backgroundColor: theme.colors.primary,
-                      }
-                    ]}
-                    onPress={() => handleSplitTypeChange('custom')}
-                  >
-                    <Icon 
-                      name="cash-multiple" 
-                      size={20} 
-                      color={splitType === 'custom' ? '#FFFFFF' : theme.colors.text} 
-                    />
-                    <ThemeText style={[
-                      styles.splitTypeText,
-                      splitType === 'custom' && { color: '#FFFFFF' }
-                    ]}>
-                      Custom
-                    </ThemeText>
-                  </TouchableOpacity>
-                </View>
-              </View>
-              
-              {splitType === 'custom' && (
-                <View style={styles.formGroup}>
-                  <ThemeText style={styles.label}>Custom Split</ThemeText>
-                  {currentGroup.members.map(memberId => (
-                    <View key={memberId} style={styles.customSplitRow}>
-                      <ThemeText style={styles.memberName}>
-                        {memberId === user?.id ? 'You' : memberId}
-                      </ThemeText>
-                      <TextInput
-                        style={[styles.splitInput, { 
-                          borderColor: theme.colors.border,
-                          color: theme.colors.text,
-                          backgroundColor: theme.colors.background
-                        }]}
-                        placeholder="0.00"
-                        placeholderTextColor={theme.colors.placeholder}
-                        value={customSplits[memberId] || ''}
-                        onChangeText={(value) => {
-                          setCustomSplits({
-                            ...customSplits,
-                            [memberId]: value
-                          });
-                        }}
-                        keyboardType="decimal-pad"
-                      />
-                    </View>
-                  ))}
-                </View>
-              )}
-              
-              <CustomButton
-                title="Add Expense"
-                onPress={handleAddExpense}
-                loading={loading}
-                style={styles.addButton}
-                icon={<Icon name="check" size={20} color="#FFFFFF" />}
-              />
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 };
@@ -560,102 +365,6 @@ const styles = StyleSheet.create({
   },
   addExpenseButton: {
     minWidth: 150,
-  },
-  modalOverlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  modalContent: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    maxHeight: '80%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  formGroup: {
-    marginBottom: 20,
-  },
-  label: {
-    marginBottom: 8,
-    fontWeight: '500',
-  },
-  input: {
-    height: 50,
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    fontSize: 16,
-  },
-  dateInput: {
-    height: 50,
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  dateText: {
-    fontSize: 16,
-  },
-  selectContainer: {
-    height: 50,
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-  },
-  selectOption: {
-    padding: 10,
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-  },
-  selectOptionText: {
-    fontWeight: '500',
-  },
-  splitTypeContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  splitTypeOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    flex: 1,
-    marginHorizontal: 4,
-  },
-  splitTypeText: {
-    marginLeft: 8,
-    fontWeight: '500',
-  },
-  customSplitRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  memberName: {
-    flex: 1,
-  },
-  splitInput: {
-    width: 100,
-    height: 40,
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    textAlign: 'right',
-  },
-  addButton: {
-    marginTop: 20,
   },
 });
 
