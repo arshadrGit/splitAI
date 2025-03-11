@@ -7,27 +7,32 @@ import {
   Alert, 
   ActivityIndicator,
   TouchableOpacity,
-  Image
+  Image,
+  Share,
+  Modal
 } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '../redux/store';
-import { fetchFriends, addFriend } from '../redux/friendsSlice';
+import { fetchFriends, addFriend, generateInviteLink } from '../redux/friendsSlice';
 import { useTheme } from '../themes/ThemeProvider';
 import { ThemeText } from '../components/ThemeText';
 import { CustomButton } from '../components/CustomButton';
 import { Card } from '../components/Card';
 import { Header } from '../components/Header';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import Clipboard from '@react-native-clipboard/clipboard';
 
 export const FriendsScreen = () => {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [emailError, setEmailError] = useState('');
   const [showAddFriend, setShowAddFriend] = useState(false);
+  const [showInviteOptions, setShowInviteOptions] = useState(false);
+  const [inviteLink, setInviteLink] = useState('');
   
   const dispatch = useDispatch();
   const { theme } = useTheme();
-  const { friends, loading: friendsLoading } = useSelector((state: RootState) => state.friends);
+  const { friends,incomingRequests, loading: friendsLoading } = useSelector((state: RootState) => state.friends);
   const user = useSelector((state: RootState) => state.auth.user);
 
   useEffect(() => {
@@ -35,6 +40,8 @@ export const FriendsScreen = () => {
       dispatch(fetchFriends(user.id));
     }
   }, [dispatch, user]);
+
+  console.log('friends', friends);
 
   const validateEmail = (email: string) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -64,6 +71,10 @@ export const FriendsScreen = () => {
         status: 'pending',
         createdAt: new Date(),
       })).unwrap();
+      
+      // Refresh the friends list
+      dispatch(fetchFriends(user.id));
+      
       setEmail('');
       setShowAddFriend(false);
       Alert.alert('Success', 'Friend request sent');
@@ -74,21 +85,62 @@ export const FriendsScreen = () => {
     }
   };
 
+  const handleGenerateInviteLink = async () => {
+    if (!user) return;
+    
+    setLoading(true);
+    try {
+      const link = await dispatch(generateInviteLink(user.id)).unwrap();
+      setInviteLink(link);
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to generate invite link');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCopyLink = () => {
+    Clipboard.setString(inviteLink);
+    Alert.alert('Success', 'Invite link copied to clipboard');
+  };
+
+  const handleShareLink = async () => {
+    try {
+      await Share.share({
+        message: `Join me on SplitEase! Use this link to sign up: ${inviteLink}`,
+      });
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to share invite link');
+    }
+  };
+
   const renderFriendItem = ({ item }: { item: any }) => {
+    // Determine if this is a sent or received friendship
+    const isSent = item.userId === user?.id;
+    
+    // For sent requests, use the email or friendId
+    // For received requests, use the userId
+    const displayName = isSent 
+      ? item.email || item.displayName || item.friendId 
+      : item.displayName || item.userId;
+      
+    const initial = displayName.charAt(0).toUpperCase();
     const isPending = item.status === 'pending';
     
     return (
       <Card style={styles.friendCard}>
         <View style={styles.friendInfo}>
           <View style={styles.friendLeft}>
-            <View style={[styles.avatarContainer, { backgroundColor: theme.colors.secondary }]}>
+            <View style={[styles.avatarContainer, { 
+              backgroundColor: isPending ? theme.colors.primary : theme.colors.secondary 
+            }]}>
               <ThemeText style={styles.avatarText}>
-                {item.friendId.charAt(0).toUpperCase()}
+                {initial}
               </ThemeText>
             </View>
             <View>
               <ThemeText variant="title" style={styles.friendName}>
-                {item.friendId}
+                {displayName}
               </ThemeText>
               {isPending && (
                 <View style={styles.statusContainer}>
@@ -138,25 +190,34 @@ export const FriendsScreen = () => {
               onBlur={() => validateEmail(email)}
             />
           </View>
-          {emailError ? <ThemeText style={styles.errorText}>{emailError}</ThemeText> : null}
+          {emailError ? <ThemeText style={[styles.errorText, { color: theme.colors.error }]}>{emailError}</ThemeText> : null}
           
-          <CustomButton
-            title="Send Request"
-            onPress={handleAddFriend}
-            loading={loading}
-            style={styles.button}
-            icon={<Icon name="send" size={20} color="#FFFFFF" />}
-          />
+          <View style={styles.buttonContainer}>
+            <CustomButton
+              title="Send Invite"
+              onPress={() => setShowInviteOptions(true)}
+              variant="outline"
+              style={styles.button}
+              icon={<Icon name="share-variant" size={20} color={theme.colors.primary} />}
+            />
+            <CustomButton
+              title="Add Friend"
+              onPress={handleAddFriend}
+              style={styles.button}
+              loading={loading}
+              icon={<Icon name="account-plus" size={20} color="#FFFFFF" />}
+            />
+          </View>
         </Card>
       )}
-
+      
       {friendsLoading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={theme.colors.primary} />
         </View>
       ) : (
         <FlatList
-          data={friends}
+          data={[...friends, ...incomingRequests]}
           renderItem={renderFriendItem}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
@@ -180,6 +241,61 @@ export const FriendsScreen = () => {
           }
         />
       )}
+      
+      {/* Invite Options Modal */}
+      <Modal
+        visible={showInviteOptions}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowInviteOptions(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.colors.card }]}>
+            <View style={styles.modalHeader}>
+              <ThemeText variant="title">Invite Friends</ThemeText>
+              <TouchableOpacity onPress={() => setShowInviteOptions(false)}>
+                <Icon name="close" size={24} color={theme.colors.text} />
+              </TouchableOpacity>
+            </View>
+            
+            <ThemeText style={styles.modalDescription}>
+              Generate a link to invite friends to SplitEase
+            </ThemeText>
+            
+            {inviteLink ? (
+              <>
+                <View style={[styles.linkContainer, { borderColor: theme.colors.border }]}>
+                  <ThemeText numberOfLines={1} style={styles.linkText}>{inviteLink}</ThemeText>
+                </View>
+                
+                <View style={styles.inviteActions}>
+                  <CustomButton
+                    title="Copy Link"
+                    onPress={handleCopyLink}
+                    variant="outline"
+                    style={styles.inviteButton}
+                    icon={<Icon name="content-copy" size={20} color={theme.colors.primary} />}
+                  />
+                  <CustomButton
+                    title="Share Link"
+                    onPress={handleShareLink}
+                    style={styles.inviteButton}
+                    icon={<Icon name="share-variant" size={20} color="#FFFFFF" />}
+                  />
+                </View>
+              </>
+            ) : (
+              <CustomButton
+                title="Generate Invite Link"
+                onPress={handleGenerateInviteLink}
+                style={styles.generateButton}
+                loading={loading}
+                icon={<Icon name="link-variant" size={20} color="#FFFFFF" />}
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -212,14 +328,18 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   errorText: {
-    color: '#FF3B30',
     fontSize: 12,
     marginBottom: 10,
     marginLeft: 30,
   },
-  button: {
-    alignSelf: 'flex-end',
+  buttonContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     marginTop: 10,
+  },
+  button: {
+    flex: 1,
+    marginHorizontal: 5,
   },
   listContent: {
     padding: 16,
@@ -290,6 +410,46 @@ const styles = StyleSheet.create({
   },
   addFriendButton: {
     marginTop: 10,
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  modalContent: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    minHeight: 300,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalDescription: {
+    marginBottom: 20,
+  },
+  linkContainer: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 20,
+  },
+  linkText: {
+    fontSize: 14,
+  },
+  inviteActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  inviteButton: {
+    flex: 1,
+    marginHorizontal: 5,
+  },
+  generateButton: {
+    marginTop: 20,
   },
 });
 

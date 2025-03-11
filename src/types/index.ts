@@ -11,6 +11,9 @@ export interface Friend {
   friendId: string;
   status: 'pending' | 'accepted';
   createdAt: Date;
+  displayName?: string;
+  email?: string;
+  photoURL?: string | null;
 }
 
 export interface Group {
@@ -20,6 +23,23 @@ export interface Group {
   createdBy: string;
   createdAt: Date;
   totalExpenses: number;
+}
+
+export interface ExpenseSplit {
+  userId: string;
+  amount: number;
+}
+
+export interface Expense {
+  id: string;
+  groupId: string;
+  description: string;
+  amount: number;
+  paidBy: string;
+  date: Date;
+  splits: ExpenseSplit[];
+  createdBy: string;
+  createdAt: Date;
 }
 
 export interface Activity {

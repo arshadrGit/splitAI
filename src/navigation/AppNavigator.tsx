@@ -14,6 +14,7 @@ import AccountScreen from '../screens/AccountScreen';
 import RecentActivityScreen from '../screens/RecentActivityScreen';
 import FriendsScreen from '../screens/FriendsScreen';
 import GroupsScreen from '../screens/GroupsScreen';
+import GroupDetailScreen from '../screens/GroupDetailScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -110,11 +111,21 @@ export const AppNavigator = () => {
           </>
         ) : (
           // Main App Stack
-          <Stack.Screen
-            name="MainTabs"
-            component={MainTabs}
-            options={{ headerShown: false }}
-          />
+          <>
+            <Stack.Screen
+              name="MainTabs"
+              component={MainTabs}
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="GroupDetail"
+              component={GroupDetailScreen}
+              options={({ route }) => ({ 
+                title: route.params?.groupName || 'Group Details',
+                headerBackTitle: 'Back'
+              })}
+            />
+          </>
         )}
       </Stack.Navigator>
     </NavigationContainer>

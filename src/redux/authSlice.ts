@@ -1,7 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import { auth } from '../services/firebase';
+import auth from '@react-native-firebase/auth';
 import { User } from '../types';
-import firebase from '@react-native-firebase/app';
 
 interface AuthState {
   user: User | null;
@@ -20,7 +19,7 @@ const initialState: AuthState = {
 export const signUp = createAsyncThunk(
   'auth/signUp',
   async ({ email, password, displayName }: { email: string; password: string; displayName: string }) => {
-    const userCredential = await auth.createUserWithEmailAndPassword(email, password);
+    const userCredential = await auth().createUserWithEmailAndPassword(email, password);
     await userCredential.user?.updateProfile({ displayName });
     return {
       id: userCredential.user.uid,
@@ -34,7 +33,7 @@ export const signUp = createAsyncThunk(
 export const signIn = createAsyncThunk(
   'auth/signIn',
   async ({ email, password }: { email: string; password: string }) => {
-    const userCredential = await auth.signInWithEmailAndPassword(email, password);
+    const userCredential = await auth().signInWithEmailAndPassword(email, password);
     return {
       id: userCredential.user.uid,
       email: userCredential.user.email!,
@@ -46,8 +45,14 @@ export const signIn = createAsyncThunk(
 
 export const signOut = createAsyncThunk(
   'auth/signOut',
-  async () => {
-    await auth.signOut();
+  async (_, { rejectWithValue }) => {
+    try {
+      await auth().signOut();
+      return null;
+    } catch (error: any) {
+      console.error('Sign out error:', error);
+      return rejectWithValue(error.message || 'Failed to sign out');
+    }
   }
 );
 
@@ -55,7 +60,7 @@ export const checkAuthState = createAsyncThunk(
   'auth/checkAuthState',
   async () => {
     return new Promise<User | null>((resolve) => {
-      const unsubscribe = auth.onAuthStateChanged((user) => {
+      const unsubscribe = auth().onAuthStateChanged((user) => {
         unsubscribe();
         if (user) {
           resolve({
@@ -104,6 +109,12 @@ const authSlice = createSlice({
       })
       .addCase(signOut.fulfilled, (state) => {
         state.user = null;
+        state.loading = false;
+        state.error = null;
+      })
+      .addCase(signOut.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload as string;
       })
       .addCase(checkAuthState.pending, (state) => {
         state.loading = true;
