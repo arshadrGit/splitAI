@@ -7,12 +7,14 @@ interface AuthState {
   user: User | null;
   loading: boolean;
   error: string | null;
+  initialized: boolean;
 }
 
 const initialState: AuthState = {
   user: null,
   loading: false,
   error: null,
+  initialized: false,
 };
 
 export const signUp = createAsyncThunk(
@@ -49,6 +51,27 @@ export const signOut = createAsyncThunk(
   }
 );
 
+export const checkAuthState = createAsyncThunk(
+  'auth/checkAuthState',
+  async () => {
+    return new Promise<User | null>((resolve) => {
+      const unsubscribe = auth.onAuthStateChanged((user) => {
+        unsubscribe();
+        if (user) {
+          resolve({
+            id: user.uid,
+            email: user.email!,
+            displayName: user.displayName || '',
+            photoURL: user.photoURL,
+          });
+        } else {
+          resolve(null);
+        }
+      });
+    });
+  }
+);
+
 const authSlice = createSlice({
   name: 'auth',
   initialState,
@@ -81,6 +104,20 @@ const authSlice = createSlice({
       })
       .addCase(signOut.fulfilled, (state) => {
         state.user = null;
+      })
+      .addCase(checkAuthState.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(checkAuthState.fulfilled, (state, action) => {
+        state.loading = false;
+        state.user = action.payload;
+        state.initialized = true;
+      })
+      .addCase(checkAuthState.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.error.message || 'Failed to check auth state';
+        state.initialized = true;
       });
   },
 });
