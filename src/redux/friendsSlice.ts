@@ -57,7 +57,6 @@ export const fetchFriends = createAsyncThunk(
           friend => friend.status === 'pending'
         ),
       };
-      debugger
       console.log('Friends count:', result.friends.length);
       console.log('Incoming requests count:', result.incomingRequests.length);
       
@@ -229,7 +228,6 @@ const friendsSlice = createSlice({
         state.error = null;
       })
       .addCase(fetchFriends.fulfilled, (state, action) => {
-        debugger
         state.loading = false;
         state.friends = action.payload.friends;
         state.incomingRequests = action.payload.incomingRequests;

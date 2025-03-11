@@ -162,6 +162,57 @@ export const calculateBalances = createAsyncThunk(
   }
 );
 
+// Record a payment between users
+export const recordPayment = createAsyncThunk(
+  'expenses/recordPayment',
+  async ({ 
+    groupId, 
+    fromUserId, 
+    toUserId, 
+    amount, 
+    date, 
+    createdBy 
+  }: { 
+    groupId: string; 
+    fromUserId: string; 
+    toUserId: string; 
+    amount: number; 
+    date: Date; 
+    createdBy: string; 
+  }) => {
+    const db = firestore();
+    
+    // Create a payment record
+    const paymentData = {
+      groupId,
+      description: 'Payment',
+      amount,
+      paidBy: fromUserId,
+      date: firestore.Timestamp.fromDate(date),
+      splits: [
+        {
+          userId: toUserId,
+          amount
+        }
+      ],
+      isPayment: true,
+      createdBy,
+      createdAt: firestore.Timestamp.now(),
+    };
+    
+    // Add the payment to the expenses collection
+    const paymentRef = await db.collection('expenses').add(paymentData);
+    const newPayment = await paymentRef.get();
+    
+    return {
+      id: newPayment.id,
+      ...newPayment.data(),
+      date: newPayment.data().date.toDate(),
+      createdAt: newPayment.data().createdAt.toDate(),
+    } as Expense;
+  }
+);
+
 const expensesSlice = createSlice({
   name: 'expenses',
   initialState,
@@ -194,6 +245,9 @@ const expensesSlice = createSlice({
       })
       .addCase(deleteExpense.fulfilled, (state, action) => {
         state.expenses = state.expenses.filter(expense => expense.id !== action.payload);
+      })
+      .addCase(recordPayment.fulfilled, (state, action) => {
+        state.expenses = [action.payload, ...state.expenses];
       });
   },
 });

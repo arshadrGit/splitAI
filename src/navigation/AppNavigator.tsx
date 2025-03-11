@@ -15,6 +15,8 @@ import RecentActivityScreen from '../screens/RecentActivityScreen';
 import FriendsScreen from '../screens/FriendsScreen';
 import GroupsScreen from '../screens/GroupsScreen';
 import GroupDetailScreen from '../screens/GroupDetailScreen';
+import GroupMembersScreen from '../screens/GroupMembersScreen';
+import SettleUpScreen from '../screens/SettleUpScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -121,9 +123,26 @@ export const AppNavigator = () => {
               name="GroupDetail"
               component={GroupDetailScreen}
               options={({ route }) => ({ 
+                headerShown: false,
                 title: route.params?.groupName || 'Group Details',
                 headerBackTitle: 'Back'
               })}
+            />
+            <Stack.Screen
+              name="GroupMembers"
+              component={GroupMembersScreen}
+              options={{ 
+                title: 'Group Members',
+                headerBackTitle: 'Back'
+              }}
+            />
+            <Stack.Screen
+              name="SettleUp"
+              component={SettleUpScreen}
+              options={{ 
+                title: 'Settle Up',
+                headerBackTitle: 'Back'
+              }}
             />
           </>
         )}
