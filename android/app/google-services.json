@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1067817255614",
+    "project_id": "splitebill-c30e4",
+    "storage_bucket": "splitebill-c30e4.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1067817255614:android:696bbcb614e2de426654ef",
+        "android_client_info": {
+          "package_name": "com.splitai"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCcachY-6PWxaqcu3AQYi57LkZ3_EWYbS8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
