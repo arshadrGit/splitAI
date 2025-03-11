@@ -1,24 +1,42 @@
 import React from 'react';
-import { Text, TextProps, StyleSheet } from 'react-native';
+import { Text, StyleSheet, TextProps, TextStyle } from 'react-native';
 import { useTheme } from '../themes/ThemeProvider';
 
 interface ThemeTextProps extends TextProps {
-  variant?: 'header' | 'title' | 'body' | 'caption';
+  variant?: 'title' | 'subtitle' | 'body' | 'caption' | 'button';
+  color?: string;
 }
 
-export const ThemeText: React.FC<ThemeTextProps> = ({ 
-  children, 
-  variant = 'body',
+export const ThemeText: React.FC<ThemeTextProps> = ({
+  children,
   style,
-  ...props 
+  variant = 'body',
+  color,
+  ...props
 }) => {
   const { theme } = useTheme();
-
+  
+  const getVariantStyle = (): TextStyle => {
+    switch (variant) {
+      case 'title':
+        return styles.title;
+      case 'subtitle':
+        return styles.subtitle;
+      case 'caption':
+        return styles.caption;
+      case 'button':
+        return styles.button;
+      case 'body':
+      default:
+        return styles.body;
+    }
+  };
+  
   return (
     <Text
       style={[
-        styles[variant],
-        { color: theme.colors.text },
+        getVariantStyle(),
+        { color: color || theme.colors.text },
         style,
       ]}
       {...props}
@@ -29,19 +47,23 @@ export const ThemeText: React.FC<ThemeTextProps> = ({
 };
 
 const styles = StyleSheet.create({
-  header: {
-    fontSize: 28,
-    fontWeight: 'bold',
-  },
   title: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '600',
   },
-  body: {
+  subtitle: {
     fontSize: 16,
+    fontWeight: '500',
+  },
+  body: {
+    fontSize: 14,
   },
   caption: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: 12,
+    opacity: 0.7,
+  },
+  button: {
+    fontSize: 16,
+    fontWeight: '600',
   },
 }); 

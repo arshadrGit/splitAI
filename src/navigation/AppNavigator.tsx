@@ -40,6 +40,7 @@ const MainTabs = () => {
         name="Recent" 
         component={RecentActivityScreen} 
         options={{
+          headerShown: false,
           tabBarIcon: ({ color, size }) => (
             <Icon name="history" color={color} size={size} />
           ),
@@ -49,6 +50,7 @@ const MainTabs = () => {
         name="Friends" 
         component={FriendsScreen} 
         options={{
+          headerShown: false,
           tabBarIcon: ({ color, size }) => (
             <Icon name="account-multiple" color={color} size={size} />
           ),
@@ -58,6 +60,7 @@ const MainTabs = () => {
         name="Groups" 
         component={GroupsScreen} 
         options={{
+          headerShown: false,
           tabBarIcon: ({ color, size }) => (
             <Icon name="account-group" color={color} size={size} />
           ),
@@ -67,6 +70,7 @@ const MainTabs = () => {
         name="Account" 
         component={AccountScreen} 
         options={{
+          headerShown: false,
           tabBarIcon: ({ color, size }) => (
             <Icon name="account-circle" color={color} size={size} />
           ),

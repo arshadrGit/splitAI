@@ -37,6 +37,7 @@ export interface Theme {
   dark: boolean;
   colors: {
     primary: string;
+    secondary: string;
     background: string;
     card: string;
     text: string;
@@ -44,5 +45,7 @@ export interface Theme {
     notification: string;
     error: string;
     success: string;
+    placeholder: string;
+    disabled: string;
   };
 } 

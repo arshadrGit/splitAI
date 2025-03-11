@@ -5,7 +5,9 @@ import {
   FlatList, 
   TextInput, 
   Alert, 
-  ActivityIndicator 
+  ActivityIndicator,
+  TouchableOpacity,
+  Image
 } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '../redux/store';
@@ -14,10 +16,15 @@ import { useTheme } from '../themes/ThemeProvider';
 import { ThemeText } from '../components/ThemeText';
 import { CustomButton } from '../components/CustomButton';
 import { Card } from '../components/Card';
+import { Header } from '../components/Header';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 export const FriendsScreen = () => {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
+  const [emailError, setEmailError] = useState('');
+  const [showAddFriend, setShowAddFriend] = useState(false);
+  
   const dispatch = useDispatch();
   const { theme } = useTheme();
   const { friends, loading: friendsLoading } = useSelector((state: RootState) => state.friends);
@@ -29,9 +36,21 @@ export const FriendsScreen = () => {
     }
   }, [dispatch, user]);
 
-  const handleAddFriend = async () => {
+  const validateEmail = (email: string) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!email) {
-      Alert.alert('Error', 'Please enter an email address');
+      setEmailError('Email is required');
+      return false;
+    } else if (!emailRegex.test(email)) {
+      setEmailError('Please enter a valid email address');
+      return false;
+    }
+    setEmailError('');
+    return true;
+  };
+
+  const handleAddFriend = async () => {
+    if (!validateEmail(email)) {
       return;
     }
 
@@ -41,11 +60,12 @@ export const FriendsScreen = () => {
     try {
       await dispatch(addFriend({
         userId: user.id,
-        friendId: email, // In a real app, you'd search for the user by email first
+        friendId: email,
         status: 'pending',
         createdAt: new Date(),
       })).unwrap();
       setEmail('');
+      setShowAddFriend(false);
       Alert.alert('Success', 'Friend request sent');
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to add friend');
@@ -55,13 +75,34 @@ export const FriendsScreen = () => {
   };
 
   const renderFriendItem = ({ item }: { item: any }) => {
+    const isPending = item.status === 'pending';
+    
     return (
       <Card style={styles.friendCard}>
         <View style={styles.friendInfo}>
-          <ThemeText variant="title">{item.friendId}</ThemeText>
-          <ThemeText variant="caption">
-            {item.status === 'pending' ? 'Pending' : 'Friend'}
-          </ThemeText>
+          <View style={styles.friendLeft}>
+            <View style={[styles.avatarContainer, { backgroundColor: theme.colors.secondary }]}>
+              <ThemeText style={styles.avatarText}>
+                {item.friendId.charAt(0).toUpperCase()}
+              </ThemeText>
+            </View>
+            <View>
+              <ThemeText variant="title" style={styles.friendName}>
+                {item.friendId}
+              </ThemeText>
+              {isPending && (
+                <View style={styles.statusContainer}>
+                  <Icon name="clock-outline" size={12} color={theme.colors.notification} />
+                  <ThemeText variant="caption" style={{ color: theme.colors.notification, marginLeft: 4 }}>
+                    Pending
+                  </ThemeText>
+                </View>
+              )}
+            </View>
+          </View>
+          <TouchableOpacity style={styles.moreButton}>
+            <Icon name="dots-vertical" size={20} color={theme.colors.text} />
+          </TouchableOpacity>
         </View>
       </Card>
     );
@@ -69,30 +110,45 @@ export const FriendsScreen = () => {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      <Card style={styles.addFriendCard}>
-        <ThemeText variant="title" style={styles.sectionTitle}>Add Friend</ThemeText>
-        <TextInput
-          style={[styles.input, { 
-            backgroundColor: theme.colors.card,
-            color: theme.colors.text,
-            borderColor: theme.colors.border,
-          }]}
-          placeholder="Friend's Email"
-          placeholderTextColor={theme.colors.text}
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          keyboardType="email-address"
-        />
-        <CustomButton
-          title="Send Request"
-          onPress={handleAddFriend}
-          loading={loading}
-          style={styles.button}
-        />
-      </Card>
-
-      <ThemeText variant="title" style={styles.friendsTitle}>Your Friends</ThemeText>
+      <Header 
+        title="Friends" 
+        rightIcon={showAddFriend ? "close" : "account-plus"} 
+        onRightPress={() => setShowAddFriend(!showAddFriend)}
+      />
+      
+      {showAddFriend && (
+        <Card style={styles.addFriendCard}>
+          <ThemeText variant="title" style={styles.sectionTitle}>Add Friend</ThemeText>
+          <View style={styles.inputContainer}>
+            <Icon name="email-outline" size={20} color={theme.colors.text} style={styles.inputIcon} />
+            <TextInput
+              style={[styles.input, { 
+                color: theme.colors.text,
+                borderColor: emailError ? theme.colors.error : theme.colors.border,
+              }]}
+              placeholder="Friend's Email"
+              placeholderTextColor={theme.colors.placeholder}
+              value={email}
+              onChangeText={(text) => {
+                setEmail(text);
+                if (emailError) validateEmail(text);
+              }}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              onBlur={() => validateEmail(email)}
+            />
+          </View>
+          {emailError ? <ThemeText style={styles.errorText}>{emailError}</ThemeText> : null}
+          
+          <CustomButton
+            title="Send Request"
+            onPress={handleAddFriend}
+            loading={loading}
+            style={styles.button}
+            icon={<Icon name="send" size={20} color="#FFFFFF" />}
+          />
+        </Card>
+      )}
 
       {friendsLoading ? (
         <View style={styles.loadingContainer}>
@@ -104,9 +160,22 @@ export const FriendsScreen = () => {
           renderItem={renderFriendItem}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
           ListEmptyComponent={
             <View style={styles.emptyState}>
-              <ThemeText>You haven't added any friends yet</ThemeText>
+              <Image 
+                source={require('../assets/images/empty-activity.png')} 
+                style={styles.emptyImage}
+                resizeMode="contain"
+              />
+              <ThemeText variant="title" style={styles.emptyTitle}>No Friends Yet</ThemeText>
+              <ThemeText style={styles.emptyText}>Add friends to split expenses with them</ThemeText>
+              <CustomButton
+                title="Add a Friend"
+                onPress={() => setShowAddFriend(true)}
+                style={styles.addFriendButton}
+                icon={<Icon name="account-plus" size={20} color="#FFFFFF" />}
+              />
             </View>
           }
         />
@@ -118,28 +187,42 @@ export const FriendsScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
   },
   addFriendCard: {
-    marginBottom: 20,
+    margin: 16,
   },
   sectionTitle: {
     marginBottom: 12,
+    fontWeight: 'bold',
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 5,
+  },
+  inputIcon: {
+    marginRight: 10,
   },
   input: {
+    flex: 1,
     height: 50,
     borderWidth: 1,
     borderRadius: 8,
-    marginBottom: 16,
     paddingHorizontal: 12,
+    fontSize: 16,
+  },
+  errorText: {
+    color: '#FF3B30',
+    fontSize: 12,
+    marginBottom: 10,
+    marginLeft: 30,
   },
   button: {
     alignSelf: 'flex-end',
-  },
-  friendsTitle: {
-    marginBottom: 12,
+    marginTop: 10,
   },
   listContent: {
+    padding: 16,
     flexGrow: 1,
   },
   friendCard: {
@@ -149,6 +232,35 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  friendLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  avatarContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  avatarText: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    fontSize: 18,
+  },
+  friendName: {
+    fontWeight: '600',
+  },
+  statusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  moreButton: {
+    padding: 8,
   },
   loadingContainer: {
     flex: 1,
@@ -160,6 +272,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
+    marginTop: 100,
+  },
+  emptyImage: {
+    width: 150,
+    height: 150,
+    marginBottom: 20,
+    opacity: 0.8,
+  },
+  emptyTitle: {
+    marginBottom: 8,
+    fontWeight: 'bold',
+  },
+  emptyText: {
+    marginBottom: 24,
+    textAlign: 'center',
+  },
+  addFriendButton: {
+    marginTop: 10,
   },
 });
 

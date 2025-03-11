@@ -4,20 +4,27 @@ import { useTheme } from '../themes/ThemeProvider';
 
 interface CardProps extends ViewProps {
   elevation?: number;
+  outlined?: boolean;
 }
 
-export const Card: React.FC<CardProps> = ({ children, style, elevation = 2, ...props }) => {
+export const Card: React.FC<CardProps> = ({ 
+  children, 
+  style, 
+  elevation = 2,
+  outlined = false,
+  ...props 
+}) => {
   const { theme } = useTheme();
-
+  
   return (
     <View
       style={[
         styles.card,
-        {
+        { 
           backgroundColor: theme.colors.card,
-          borderColor: theme.colors.border,
+          borderColor: outlined ? theme.colors.border : 'transparent',
+          shadowOpacity: theme.dark ? 0.3 : 0.1,
           elevation: elevation,
-          shadowOpacity: elevation * 0.1,
         },
         style,
       ]}
@@ -30,14 +37,12 @@ export const Card: React.FC<CardProps> = ({ children, style, elevation = 2, ...p
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 8,
+    borderRadius: 12,
     padding: 16,
     borderWidth: 1,
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowRadius: 3.84,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 6,
+    marginVertical: 8,
   },
 }); 

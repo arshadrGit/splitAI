@@ -1,32 +1,40 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { useColorScheme } from 'react-native';
 import { lightTheme } from './lightTheme';
 import { darkTheme } from './darkTheme';
 import { Theme } from '../types';
 
 interface ThemeContextType {
   theme: Theme;
-  isDark: boolean;
   toggleTheme: () => void;
+  isDark: boolean;
 }
 
 const ThemeContext = createContext<ThemeContextType>({
   theme: lightTheme,
-  isDark: false,
   toggleTheme: () => {},
+  isDark: false,
 });
 
 export const useTheme = () => useContext(ThemeContext);
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [isDark, setIsDark] = useState(false);
-  const theme = isDark ? darkTheme : lightTheme;
-
+  const deviceTheme = useColorScheme();
+  const [isDark, setIsDark] = useState(deviceTheme === 'dark');
+  
+  // Update theme when device theme changes
+  useEffect(() => {
+    setIsDark(deviceTheme === 'dark');
+  }, [deviceTheme]);
+  
   const toggleTheme = () => {
-    setIsDark(!isDark);
+    setIsDark(prev => !prev);
   };
-
+  
+  const theme = isDark ? darkTheme : lightTheme;
+  
   return (
-    <ThemeContext.Provider value={{ theme, isDark, toggleTheme }}>
+    <ThemeContext.Provider value={{ theme, toggleTheme, isDark }}>
       {children}
     </ThemeContext.Provider>
   );
