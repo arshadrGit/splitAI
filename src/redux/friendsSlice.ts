@@ -19,7 +19,6 @@ export const fetchFriends = createAsyncThunk(
   'friends/fetchFriends',
   async (userId: string) => {
     try {
-      // Get all friends
       const friendsSnapshot = await firestore()
         .collection('friends')
         .where('userId', '==', userId)
@@ -28,6 +27,7 @@ export const fetchFriends = createAsyncThunk(
       const friends = friendsSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
+        createdAt: doc.data().createdAt.toDate(),
       } as Friend));
       
       return friends;
@@ -41,61 +41,30 @@ export const fetchFriends = createAsyncThunk(
 // Add a friend
 export const addFriend = createAsyncThunk(
   'friends/addFriend',
-  async (friend: Omit<Friend, 'id'> & { skipUserCheck?: boolean }, { rejectWithValue }) => {
+  async (friend: Omit<Friend, 'id'>, { rejectWithValue }) => {
     try {
       const db = firestore();
       const friendsCollection = db.collection('friends');
       
-      let friendUserId = friend.friendId;
-      let userData: { email?: string; displayName: string; photoURL?: string | null } = { 
-        email: friend.email, 
-        displayName: friend.friendId,
-        photoURL: null
-      };
+      // Check if the friend already exists
+      const existingFriends = await friendsCollection
+        .where('userId', '==', friend.userId)
+        .where('friendId', '==', friend.friendId)
+        .get();
       
-      // Only check user existence if skipUserCheck is false
-      if (!friend.skipUserCheck) {
-        // Check if the friend email exists in the users collection
-        const usersCollection = db.collection('users');
-        const userSnapshot = await usersCollection
-          .where('email', '==', friend.friendId)
-          .get();
-        
-        if (userSnapshot.empty) {
-          return rejectWithValue('No user found with this email address');
-        }
-        
-        // Get the user data
-        const docData = userSnapshot.docs[0].data();
-        userData = {
-          email: docData.email,
-          displayName: docData.displayName || friend.friendId,
-          photoURL: docData.photoURL || null
-        };
-        friendUserId = userSnapshot.docs[0].id;
-        
-        // Check if the friend already exists
-        const existingFriends = await friendsCollection
-          .where('userId', '==', friend.userId)
-          .where('friendId', '==', friendUserId)
-          .get();
-        
-        if (!existingFriends.empty) {
-          return rejectWithValue('This friend is already in your list');
-        }
+      if (!existingFriends.empty) {
+        return rejectWithValue('This friend is already in your list');
       }
       
       // Create a new friend entry
       const friendData = {
         userId: friend.userId,
-        friendId: friendUserId,
-        email: userData.email,
-        displayName: userData.displayName,
-        photoURL: userData.photoURL,
+        friendId: friend.friendId,
+        email: friend.email,
+        displayName: friend.displayName || friend.friendId,
+        photoURL: friend.photoURL || null,
         createdAt: firestore.Timestamp.now(),
       };
-      
-      console.log('Adding friend:', friendData);
       
       const docRef = await friendsCollection.add(friendData);
       const newFriend = await docRef.get();

@@ -8,37 +8,25 @@ import {
   ActivityIndicator,
   TouchableOpacity,
   Image,
-  Share,
   Modal,
   Keyboard
 } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch, RootState } from '../redux/store';
-import { 
-  fetchFriends, 
-  addFriend, 
-  generateInviteLink, 
-  acceptFriendRequest,
-  rejectFriendRequest 
-} from '../redux/friendsSlice';
+import { fetchFriends, addFriend } from '../redux/friendsSlice';
 import { useTheme } from '../themes/ThemeProvider';
 import { ThemeText } from '../components/ThemeText';
 import { CustomButton } from '../components/CustomButton';
 import { Card } from '../components/Card';
 import { Header } from '../components/Header';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import Clipboard from '@react-native-clipboard/clipboard';
 import firestore from '@react-native-firebase/firestore';
 import debounce from 'lodash/debounce';
-import { User } from '../types';
+import { User, Friend } from '../types';
 
 export const FriendsScreen = () => {
-  const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
-  const [emailError, setEmailError] = useState('');
   const [showAddFriend, setShowAddFriend] = useState(false);
-  const [showInviteOptions, setShowInviteOptions] = useState(false);
-  const [inviteLink, setInviteLink] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<User[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -97,29 +85,21 @@ export const FriendsScreen = () => {
 
   const validateEmail = (email: string) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!email) {
-      setEmailError('Email is required');
-      return false;
-    } else if (!emailRegex.test(email)) {
-      setEmailError('Please enter a valid email address');
-      return false;
-    }
-    setEmailError('');
-    return true;
+    if (!email) return false;
+    return emailRegex.test(email);
   };
 
-  const handleAddFriend = async (friendId: string, friendEmail?: string, skipUserCheck: boolean = false) => {
+  const handleAddFriend = async (friendId: string, displayName: string, email?: string) => {
     if (!user) return;
 
     setLoading(true);
     try {
       await dispatch(addFriend({
         userId: user.id,
-        friendId: friendId,
-        status: 'pending',
+        friendId,
+        displayName,
+        email,
         createdAt: new Date(),
-        email: friendEmail,
-        skipUserCheck
       })).unwrap();
       
       dispatch(fetchFriends(user.id));
@@ -127,7 +107,7 @@ export const FriendsScreen = () => {
       setSearchResults([]);
       setShowAddFriend(false);
       setShowManualAdd(false);
-      Alert.alert('Success', 'Friend request sent');
+      Alert.alert('Success', 'Friend added successfully');
     } catch (error: any) {
       console.log(error);
       Alert.alert('Error', error.message || 'Failed to add friend');
@@ -143,62 +123,16 @@ export const FriendsScreen = () => {
     }
 
     if (manualEmail && !validateEmail(manualEmail)) {
+      Alert.alert('Error', 'Please enter a valid email address');
       return;
     }
 
-    handleAddFriend(manualName, manualEmail, true);
+    handleAddFriend(manualName, manualName, manualEmail);
     setManualName('');
     setManualEmail('');
   };
 
-  const handleGenerateInviteLink = async () => {
-    if (!user) return;
-    
-    setLoading(true);
-    try {
-      const link = await dispatch(generateInviteLink(user.id)).unwrap();
-      setInviteLink(link);
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to generate invite link');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleCopyLink = () => {
-    Clipboard.setString(inviteLink);
-    Alert.alert('Success', 'Invite link copied to clipboard');
-  };
-
-  const handleShareLink = async () => {
-    try {
-      await Share.share({
-        message: `Join me on SplitEase! Use this link to sign up: ${inviteLink}`,
-      });
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to share invite link');
-    }
-  };
-
-  const handleAcceptRequest = async (requestId: string) => {
-    try {
-      await dispatch(acceptFriendRequest(requestId)).unwrap();
-      Alert.alert('Success', 'Friend request accepted');
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to accept friend request');
-    }
-  };
-
-  const handleRejectRequest = async (requestId: string) => {
-    try {
-      await dispatch(rejectFriendRequest(requestId)).unwrap();
-      Alert.alert('Success', 'Friend request rejected');
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to reject friend request');
-    }
-  };
-
-  const renderFriendItem = ({ item }: { item: any }) => {
+  const renderFriendItem = ({ item }: { item: Friend }) => {
     const displayName = item.displayName || item.email || item.friendId;
     const initial = displayName.charAt(0).toUpperCase();
     
@@ -222,177 +156,25 @@ export const FriendsScreen = () => {
               )}
             </View>
           </View>
-          
-          <TouchableOpacity style={styles.moreButton}>
-            <Icon name="dots-vertical" size={20} color={theme.colors.text} />
-          </TouchableOpacity>
         </View>
       </Card>
     );
   };
 
-  const renderSearchResult = ({ item }: { item: User }) => (
-    <Card style={styles.searchResultCard}>
-      <View style={styles.searchResultInfo}>
-        <View style={[styles.avatarContainer, { backgroundColor: theme.colors.primary }]}>
-          <ThemeText style={styles.avatarText}>
-            {item.displayName?.charAt(0).toUpperCase() || item.email.charAt(0).toUpperCase()}
-          </ThemeText>
-        </View>
-        <View>
-          <ThemeText variant="title" style={styles.searchResultName}>
-            {item.displayName || item.email}
-          </ThemeText>
-          {item.displayName && (
-            <ThemeText variant="caption" style={styles.searchResultEmail}>
-              {item.email}
-            </ThemeText>
-          )}
-        </View>
-      </View>
-      <CustomButton
-        title="Add Friend"
-        onPress={() => handleAddFriend(item.id)}
-        variant="outline"
-        style={styles.addButton}
-        icon={<Icon name="account-plus" size={20} color={theme.colors.primary} />}
-      />
-    </Card>
-  );
-
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <Header 
-        title="Friends" 
-        rightIcon={showAddFriend ? "close" : "account-plus"} 
-        onRightPress={() => setShowAddFriend(!showAddFriend)}
+        title="Friends"
+        rightIcon="account-plus"
+        onRightPress={() => setShowAddFriend(true)}
       />
-      
-      {showAddFriend && (
-        <Card style={styles.addFriendCard}>
-          <ThemeText variant="title" style={styles.sectionTitle}>Add Friend</ThemeText>
-          <View style={styles.inputContainer}>
-            <Icon name="magnify" size={20} color={theme.colors.text} style={styles.inputIcon} />
-            <TextInput
-              style={[styles.input, { 
-                color: theme.colors.text,
-                borderColor: theme.colors.border,
-              }]}
-              placeholder="Search by name or email"
-              placeholderTextColor={theme.colors.placeholder}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              autoCapitalize="none"
-              keyboardType="email-address"
-            />
-          </View>
-          
-          {isSearching ? (
-            <ActivityIndicator style={styles.searchLoading} color={theme.colors.primary} />
-          ) : searchResults.length === 0 && searchQuery.trim() !== '' ? (
-            <View style={styles.noResultsContainer}>
-              <ThemeText style={styles.noResultsText}>No users found</ThemeText>
-              <CustomButton
-                title="Add Manually"
-                onPress={() => {
-                  setShowManualAdd(true);
-                  Keyboard.dismiss();
-                }}
-                variant="outline"
-                style={styles.manualAddButton}
-                icon={<Icon name="account-plus" size={20} color={theme.colors.primary} />}
-              />
-            </View>
-          ) : (
-            <FlatList
-              data={searchResults}
-              renderItem={renderSearchResult}
-              keyExtractor={(item) => item.id}
-              style={styles.searchResults}
-              keyboardShouldPersistTaps="handled"
-            />
-          )}
-          
-          <View style={styles.buttonContainer}>
-            <CustomButton
-              title="Send Invite"
-              onPress={() => setShowInviteOptions(true)}
-              variant="outline"
-              style={styles.button}
-              icon={<Icon name="share-variant" size={20} color={theme.colors.primary} />}
-            />
-          </View>
-        </Card>
-      )}
 
-      {/* Manual Add Friend Modal */}
-      <Modal
-        visible={showManualAdd}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setShowManualAdd(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: theme.colors.card }]}>
-            <View style={styles.modalHeader}>
-              <ThemeText variant="title">Add Friend Manually</ThemeText>
-              <TouchableOpacity onPress={() => setShowManualAdd(false)}>
-                <Icon name="close" size={24} color={theme.colors.text} />
-              </TouchableOpacity>
-            </View>
-            
-            <View style={styles.inputContainer}>
-              <Icon name="account" size={20} color={theme.colors.text} style={styles.inputIcon} />
-              <TextInput
-                style={[styles.input, { 
-                  color: theme.colors.text,
-                  borderColor: theme.colors.border,
-                }]}
-                placeholder="Friend's Name"
-                placeholderTextColor={theme.colors.placeholder}
-                value={manualName}
-                onChangeText={setManualName}
-              />
-            </View>
-            
-            <View style={styles.inputContainer}>
-              <Icon name="email-outline" size={20} color={theme.colors.text} style={styles.inputIcon} />
-              <TextInput
-                style={[styles.input, { 
-                  color: theme.colors.text,
-                  borderColor: emailError ? theme.colors.error : theme.colors.border,
-                }]}
-                placeholder="Friend's Email (optional)"
-                placeholderTextColor={theme.colors.placeholder}
-                value={manualEmail}
-                onChangeText={(text) => {
-                  setManualEmail(text);
-                  if (emailError && text) validateEmail(text);
-                }}
-                autoCapitalize="none"
-                keyboardType="email-address"
-              />
-            </View>
-            {emailError ? <ThemeText style={[styles.errorText, { color: theme.colors.error }]}>{emailError}</ThemeText> : null}
-            
-            <CustomButton
-              title="Add Friend"
-              onPress={handleManualAdd}
-              style={styles.modalButton}
-              loading={loading}
-              icon={<Icon name="account-plus" size={20} color="#FFFFFF" />}
-            />
-          </View>
-        </View>
-      </Modal>
-      
       {friendsLoading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={theme.colors.primary} />
         </View>
       ) : (
         <View style={styles.friendsContainer}>
-          {/* Friends Section */}
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Icon name="account-group" size={20} color={theme.colors.secondary} />
@@ -410,11 +192,7 @@ export const FriendsScreen = () => {
               />
             ) : (
               <View style={styles.emptyState}>
-                <Image 
-                  source={require('../assets/images/empty-activity.png')} 
-                  style={styles.emptyImage}
-                  resizeMode="contain"
-                />
+                <Icon name="account-group" size={64} color={theme.colors.placeholder} />
                 <ThemeText variant="title" style={styles.emptyTitle}>No Friends Yet</ThemeText>
                 <ThemeText style={styles.emptyText}>Add friends to split expenses with them</ThemeText>
                 <CustomButton
@@ -428,57 +206,116 @@ export const FriendsScreen = () => {
           </View>
         </View>
       )}
-      
-      {/* Invite Options Modal */}
+
+      {/* Add Friend Modal */}
       <Modal
-        visible={showInviteOptions}
-        transparent={true}
+        visible={showAddFriend}
         animationType="slide"
-        onRequestClose={() => setShowInviteOptions(false)}
+        transparent={true}
+        onRequestClose={() => setShowAddFriend(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: theme.colors.card }]}>
+          <View style={[styles.modalContent, { backgroundColor: theme.colors.background }]}>
             <View style={styles.modalHeader}>
-              <ThemeText variant="title">Invite Friends</ThemeText>
-              <TouchableOpacity onPress={() => setShowInviteOptions(false)}>
+              <ThemeText variant="title">Add a Friend</ThemeText>
+              <TouchableOpacity onPress={() => setShowAddFriend(false)}>
                 <Icon name="close" size={24} color={theme.colors.text} />
               </TouchableOpacity>
             </View>
-            
-            <ThemeText style={styles.modalDescription}>
-              Generate a link to invite friends to SplitEase
-            </ThemeText>
-            
-            {inviteLink ? (
+
+            {!showManualAdd ? (
               <>
-                <View style={[styles.linkContainer, { borderColor: theme.colors.border }]}>
-                  <ThemeText numberOfLines={1} style={styles.linkText}>{inviteLink}</ThemeText>
-                </View>
-                
-                <View style={styles.inviteActions}>
-                  <CustomButton
-                    title="Copy Link"
-                    onPress={handleCopyLink}
-                    variant="outline"
-                    style={styles.inviteButton}
-                    icon={<Icon name="content-copy" size={20} color={theme.colors.primary} />}
+                <TextInput
+                  style={[styles.searchInput, { 
+                    backgroundColor: theme.colors.card,
+                    color: theme.colors.text,
+                    borderColor: theme.colors.border
+                  }]}
+                  placeholder="Search by email..."
+                  placeholderTextColor={theme.colors.placeholder}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                />
+
+                {isSearching ? (
+                  <ActivityIndicator style={styles.searchLoading} color={theme.colors.primary} />
+                ) : searchResults.length > 0 ? (
+                  <FlatList
+                    data={searchResults}
+                    keyExtractor={(item) => item.id}
+                    style={styles.searchResults}
+                    renderItem={({ item }) => (
+                      <Card style={styles.searchResultCard}>
+                        <View style={styles.searchResultInfo}>
+                          <View>
+                            <ThemeText style={styles.searchResultName}>
+                              {item.displayName || item.email}
+                            </ThemeText>
+                            <ThemeText style={styles.searchResultEmail}>
+                              {item.email}
+                            </ThemeText>
+                          </View>
+                        </View>
+                        <CustomButton
+                          title="Add"
+                          onPress={() => handleAddFriend(item.id, item.displayName || item.email, item.email)}
+                          style={styles.addButton}
+                          loading={loading}
+                        />
+                      </Card>
+                    )}
                   />
-                  <CustomButton
-                    title="Share Link"
-                    onPress={handleShareLink}
-                    style={styles.inviteButton}
-                    icon={<Icon name="share-variant" size={20} color="#FFFFFF" />}
-                  />
-                </View>
+                ) : searchQuery ? (
+                  <View style={styles.noResultsContainer}>
+                    <ThemeText style={styles.noResultsText}>
+                      No users found with this email
+                    </ThemeText>
+                    <CustomButton
+                      title="Add Manually"
+                      onPress={() => setShowManualAdd(true)}
+                      variant="outline"
+                      style={styles.manualAddButton}
+                      icon={<Icon name="account-plus" size={18} color={theme.colors.primary} />}
+                    />
+                  </View>
+                ) : null}
               </>
             ) : (
-              <CustomButton
-                title="Generate Invite Link"
-                onPress={handleGenerateInviteLink}
-                style={styles.generateButton}
-                loading={loading}
-                icon={<Icon name="link-variant" size={20} color="#FFFFFF" />}
-              />
+              <View style={styles.manualAddForm}>
+                <TextInput
+                  style={[styles.input, { 
+                    backgroundColor: theme.colors.card,
+                    color: theme.colors.text,
+                    borderColor: theme.colors.border
+                  }]}
+                  placeholder="Friend's Name"
+                  placeholderTextColor={theme.colors.placeholder}
+                  value={manualName}
+                  onChangeText={setManualName}
+                />
+                <TextInput
+                  style={[styles.input, { 
+                    backgroundColor: theme.colors.card,
+                    color: theme.colors.text,
+                    borderColor: theme.colors.border
+                  }]}
+                  placeholder="Friend's Email (optional)"
+                  placeholderTextColor={theme.colors.placeholder}
+                  value={manualEmail}
+                  onChangeText={setManualEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+                <CustomButton
+                  title="Add Friend"
+                  onPress={handleManualAdd}
+                  style={styles.modalButton}
+                  loading={loading}
+                  icon={<Icon name="account-plus" size={20} color="#FFFFFF" />}
+                />
+              </View>
             )}
           </View>
         </View>
@@ -491,59 +328,41 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  addFriendCard: {
-    margin: 16,
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  sectionTitle: {
-    marginBottom: 12,
-    fontWeight: 'bold',
+  friendsContainer: {
+    flex: 1,
   },
-  inputContainer: {
+  section: {
+    flex: 1,
+  },
+  sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 5,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
-  inputIcon: {
-    marginRight: 10,
-  },
-  input: {
-    flex: 1,
-    height: 50,
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    fontSize: 16,
-  },
-  errorText: {
-    fontSize: 12,
-    marginBottom: 10,
-    marginLeft: 30,
-  },
-  buttonContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 10,
-  },
-  button: {
-    flex: 1,
-    marginHorizontal: 5,
+  sectionTitle: {
+    marginLeft: 8,
   },
   listContent: {
     padding: 16,
-    flexGrow: 1,
   },
   friendCard: {
     marginBottom: 12,
+    padding: 12,
   },
   friendInfo: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
   },
   friendLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    flex: 1,
   },
   avatarContainer: {
     width: 40,
@@ -555,59 +374,44 @@ const styles = StyleSheet.create({
   },
   avatarText: {
     color: '#FFFFFF',
-    fontWeight: 'bold',
     fontSize: 18,
+    fontWeight: '600',
   },
   friendName: {
     fontWeight: '600',
   },
-  statusContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  moreButton: {
-    padding: 8,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+  friendEmail: {
+    marginTop: 2,
+    opacity: 0.7,
   },
   emptyState: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
-    marginTop: 100,
-  },
-  emptyImage: {
-    width: 150,
-    height: 150,
-    marginBottom: 20,
-    opacity: 0.8,
   },
   emptyTitle: {
+    marginTop: 16,
     marginBottom: 8,
-    fontWeight: 'bold',
   },
   emptyText: {
-    marginBottom: 24,
     textAlign: 'center',
+    marginBottom: 24,
+    opacity: 0.7,
   },
   addFriendButton: {
-    marginTop: 10,
+    minWidth: 150,
   },
   modalOverlay: {
     flex: 1,
-    justifyContent: 'flex-end',
     backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
   },
   modalContent: {
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 20,
-    minHeight: 300,
+    maxHeight: '80%',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -615,46 +419,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
   },
-  modalDescription: {
-    marginBottom: 20,
-  },
-  linkContainer: {
+  searchInput: {
+    height: 50,
     borderWidth: 1,
     borderRadius: 8,
-    padding: 12,
-    marginBottom: 20,
+    paddingHorizontal: 16,
+    marginBottom: 16,
+    fontSize: 16,
   },
-  linkText: {
-    fontSize: 14,
-  },
-  inviteActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  inviteButton: {
-    flex: 1,
-    marginHorizontal: 5,
-  },
-  generateButton: {
-    marginTop: 20,
-  },
-  requestActions: {
-    flexDirection: 'row',
-  },
-  actionButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: 8,
-    borderWidth: 1,
-  },
-  acceptButton: {
-    borderColor: '#4CAF50',
-  },
-  rejectButton: {
-    borderColor: '#F44336',
+  searchResults: {
+    maxHeight: 300,
   },
   searchResultCard: {
     flexDirection: 'row',
@@ -664,8 +438,6 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   searchResultInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
     flex: 1,
   },
   searchResultName: {
@@ -676,11 +448,7 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   addButton: {
-    minWidth: 100,
-  },
-  searchResults: {
-    maxHeight: 200,
-    marginTop: 10,
+    minWidth: 80,
   },
   searchLoading: {
     marginTop: 20,
@@ -688,36 +456,27 @@ const styles = StyleSheet.create({
   noResultsContainer: {
     alignItems: 'center',
     marginTop: 20,
-    marginBottom: 10,
   },
   noResultsText: {
-    marginBottom: 10,
+    marginBottom: 16,
     opacity: 0.7,
   },
   manualAddButton: {
     minWidth: 150,
   },
-  modalButton: {
-    marginTop: 20,
+  manualAddForm: {
+    marginTop: 16,
   },
-  friendsContainer: {
-    flex: 1,
-  },
-  section: {
-    marginBottom: 20,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  input: {
+    height: 50,
+    borderWidth: 1,
+    borderRadius: 8,
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0,0,0,0.1)',
+    marginBottom: 16,
+    fontSize: 16,
   },
-  friendEmail: {
-    fontSize: 12,
-    opacity: 0.7,
-    marginTop: 2,
+  modalButton: {
+    marginTop: 8,
   },
 });
 

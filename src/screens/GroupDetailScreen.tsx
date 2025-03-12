@@ -8,12 +8,13 @@ import {
   ActivityIndicator,
   TouchableOpacity,
   Modal,
-  ScrollView
+  ScrollView,
+  Pressable
 } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
-import { RootState } from '../redux/store';
+import { AppDispatch, RootState } from '../redux/store';
 import { fetchGroupById } from '../redux/groupsSlice';
-import { fetchExpenses, addExpense } from '../redux/expensesSlice';
+import { fetchExpenses, addExpense, deleteExpense } from '../redux/expensesSlice';
 import { useTheme } from '../themes/ThemeProvider';
 import { ThemeText } from '../components/ThemeText';
 import { CustomButton } from '../components/CustomButton';
@@ -21,6 +22,9 @@ import { Card } from '../components/Card';
 import { Header } from '../components/Header';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import Swipeable from 'react-native-gesture-handler/Swipeable';
+import { Expense } from '../types';
 
 export const GroupDetailScreen = ({ route, navigation }: any) => {
   const { groupId } = route.params;
@@ -34,7 +38,7 @@ export const GroupDetailScreen = ({ route, navigation }: any) => {
   const [showAddExpense, setShowAddExpense] = useState(false);
   const [loading, setLoading] = useState(false);
   
-  const dispatch = useDispatch();
+  const dispatch = useDispatch<AppDispatch>();
   const { theme } = useTheme();
   const { currentGroup, loading: groupLoading } = useSelector((state: RootState) => state.groups);
   const { expenses, loading: expensesLoading } = useSelector((state: RootState) => state.expenses);
@@ -146,35 +150,76 @@ export const GroupDetailScreen = ({ route, navigation }: any) => {
     }
   };
 
+  const handleDeleteExpense = (expenseId: string) => {
+    Alert.alert(
+      'Delete Expense',
+      'Are you sure you want to delete this expense? This action cannot be undone.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await dispatch(deleteExpense({ expenseId, groupId })).unwrap();
+              Alert.alert('Success', 'Expense deleted successfully');
+            } catch (error: any) {
+              Alert.alert('Error', error.message || 'Failed to delete expense');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const renderRightActions = (expenseId: string) => {
+    return (
+      <Pressable
+        style={[styles.deleteAction, { backgroundColor: theme.colors.error }]}
+        onPress={() => handleDeleteExpense(expenseId)}
+      >
+        <Icon name="delete" size={24} color="#FFFFFF" />
+      </Pressable>
+    );
+  };
+
   const renderExpenseItem = ({ item }: { item: any }) => {
     const date = new Date(item.date);
     const formattedDate = `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
     
     return (
-      <Card style={styles.expenseCard}>
-        <View style={styles.expenseHeader}>
-          <ThemeText variant="title" style={styles.expenseDescription}>
-            {item.description}
-          </ThemeText>
-          <ThemeText variant="title" style={styles.expenseAmount}>
-            ${item.amount.toFixed(2)}
-          </ThemeText>
-        </View>
-        <View style={styles.expenseDetails}>
-          <View style={styles.expenseDetail}>
-            <Icon name="calendar" size={16} color={theme.colors.text} />
-            <ThemeText variant="caption" style={styles.detailText}>
-              {formattedDate}
+      <Swipeable
+        renderRightActions={() => renderRightActions(item.id)}
+        overshootRight={false}
+      >
+        <Card style={styles.expenseCard}>
+          <View style={styles.expenseHeader}>
+            <ThemeText variant="title" style={styles.expenseDescription}>
+              {item.description}
+            </ThemeText>
+            <ThemeText variant="title" style={styles.expenseAmount}>
+              ${item.amount.toFixed(2)}
             </ThemeText>
           </View>
-          <View style={styles.expenseDetail}>
-            <Icon name="account" size={16} color={theme.colors.text} />
-            <ThemeText variant="caption" style={styles.detailText}>
-              Paid by {item.paidBy === user?.id ? 'you' : item.paidBy}
-            </ThemeText>
+          <View style={styles.expenseDetails}>
+            <View style={styles.expenseDetail}>
+              <Icon name="calendar" size={16} color={theme.colors.text} />
+              <ThemeText variant="caption" style={styles.detailText}>
+                {formattedDate}
+              </ThemeText>
+            </View>
+            <View style={styles.expenseDetail}>
+              <Icon name="account" size={16} color={theme.colors.text} />
+              <ThemeText variant="caption" style={styles.detailText}>
+                Paid by {item.paidBy === user?.id ? 'you' : item.paidBy}
+              </ThemeText>
+            </View>
           </View>
-        </View>
-      </Card>
+        </Card>
+      </Swipeable>
     );
   };
 
@@ -194,77 +239,79 @@ export const GroupDetailScreen = ({ route, navigation }: any) => {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      <Header 
-        title={currentGroup.name} 
-        leftIcon="arrow-left"
-        onLeftPress={() => navigation.goBack()}
-        rightIcon="plus"
-        onRightPress={() => navigation.navigate('AddExpense', { groupId })}
-      />
-      
-      <Card style={styles.summaryCard}>
-        <View style={styles.summaryRow}>
-          <View style={styles.summaryItem}>
-            <ThemeText variant="caption">Total Expenses</ThemeText>
-            <ThemeText variant="title">${currentGroup.totalExpenses.toFixed(2)}</ThemeText>
-          </View>
-          <View style={styles.summaryItem}>
-            <ThemeText variant="caption">Members</ThemeText>
-            <ThemeText variant="title">{currentGroup.members.length}</ThemeText>
-          </View>
-        </View>
-        <View style={styles.actionButtons}>
-          <TouchableOpacity 
-            style={[styles.actionButton, { backgroundColor: theme.colors.primary }]}
-            onPress={() => navigation.navigate('SettleUp', { groupId })}
-          >
-            <Icon name="cash-multiple" size={20} color="#FFFFFF" />
-            <ThemeText style={styles.actionButtonText}>Settle Up</ThemeText>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.actionButton, { backgroundColor: theme.colors.secondary }]}
-            onPress={() => navigation.navigate('GroupMembers', { groupId })}
-          >
-            <Icon name="account-group" size={20} color="#FFFFFF" />
-            <ThemeText style={styles.actionButtonText}>Members</ThemeText>
-          </TouchableOpacity>
-        </View>
-      </Card>
-      
-      <View style={styles.expensesContainer}>
-        <View style={styles.sectionHeader}>
-          <ThemeText variant="subtitle" style={styles.sectionTitle}>Expenses</ThemeText>
-          <TouchableOpacity onPress={() => navigation.navigate('AddExpense', { groupId })}>
-            <Icon name="plus" size={24} color={theme.colors.primary} />
-          </TouchableOpacity>
-        </View>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        <Header 
+          title={currentGroup.name} 
+          leftIcon="arrow-left"
+          onLeftPress={() => navigation.goBack()}
+          rightIcon="plus"
+          onRightPress={() => navigation.navigate('AddExpense', { groupId })}
+        />
         
-        {expensesLoading ? (
-          <ActivityIndicator size="large" color={theme.colors.primary} />
-        ) : (
-          <FlatList
-            data={expenses}
-            renderItem={renderExpenseItem}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.expensesList}
-            ListEmptyComponent={
-              <View style={styles.emptyExpenses}>
-                <Icon name="cash-remove" size={48} color={theme.colors.placeholder} />
-                <ThemeText style={styles.emptyText}>No expenses yet</ThemeText>
-                <CustomButton
-                  title="Add an Expense"
-                  onPress={() => navigation.navigate('AddExpense', { groupId })}
-                  variant="outline"
-                  style={styles.addExpenseButton}
-                  icon={<Icon name="plus" size={18} color={theme.colors.primary} />}
-                />
-              </View>
-            }
-          />
-        )}
+        <Card style={styles.summaryCard}>
+          <View style={styles.summaryRow}>
+            <View style={styles.summaryItem}>
+              <ThemeText variant="caption">Total Expenses</ThemeText>
+              <ThemeText variant="title">${currentGroup.totalExpenses.toFixed(2)}</ThemeText>
+            </View>
+            <View style={styles.summaryItem}>
+              <ThemeText variant="caption">Members</ThemeText>
+              <ThemeText variant="title">{currentGroup.members.length}</ThemeText>
+            </View>
+          </View>
+          <View style={styles.actionButtons}>
+            <TouchableOpacity 
+              style={[styles.actionButton, { backgroundColor: theme.colors.primary }]}
+              onPress={() => navigation.navigate('SettleUp', { groupId })}
+            >
+              <Icon name="cash-multiple" size={20} color="#FFFFFF" />
+              <ThemeText style={styles.actionButtonText}>Settle Up</ThemeText>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.actionButton, { backgroundColor: theme.colors.secondary }]}
+              onPress={() => navigation.navigate('GroupMembers', { groupId })}
+            >
+              <Icon name="account-group" size={20} color="#FFFFFF" />
+              <ThemeText style={styles.actionButtonText}>Members</ThemeText>
+            </TouchableOpacity>
+          </View>
+        </Card>
+        
+        <View style={styles.expensesContainer}>
+          <View style={styles.sectionHeader}>
+            <ThemeText variant="subtitle" style={styles.sectionTitle}>Expenses</ThemeText>
+            <TouchableOpacity onPress={() => navigation.navigate('AddExpense', { groupId })}>
+              <Icon name="plus" size={24} color={theme.colors.primary} />
+            </TouchableOpacity>
+          </View>
+          
+          {expensesLoading ? (
+            <ActivityIndicator size="large" color={theme.colors.primary} />
+          ) : (
+            <FlatList
+              data={expenses}
+              renderItem={renderExpenseItem}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={styles.expensesList}
+              ListEmptyComponent={
+                <View style={styles.emptyExpenses}>
+                  <Icon name="cash-remove" size={48} color={theme.colors.placeholder} />
+                  <ThemeText style={styles.emptyText}>No expenses yet</ThemeText>
+                  <CustomButton
+                    title="Add an Expense"
+                    onPress={() => navigation.navigate('AddExpense', { groupId })}
+                    variant="outline"
+                    style={styles.addExpenseButton}
+                    icon={<Icon name="plus" size={18} color={theme.colors.primary} />}
+                  />
+                </View>
+              }
+            />
+          )}
+        </View>
       </View>
-    </View>
+    </GestureHandlerRootView>
   );
 };
 
@@ -365,6 +412,13 @@ const styles = StyleSheet.create({
   },
   addExpenseButton: {
     minWidth: 150,
+  },
+  deleteAction: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 70,
+    height: '100%',
+    marginBottom: 12,
   },
 });
 

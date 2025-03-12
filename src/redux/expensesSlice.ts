@@ -1,22 +1,7 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import firestore from '@react-native-firebase/firestore';
-
-interface ExpenseSplit {
-  userId: string;
-  amount: number;
-}
-
-export interface Expense {
-  id: string;
-  groupId: string;
-  description: string;
-  amount: number;
-  paidBy: string;
-  date: Date;
-  splits: ExpenseSplit[];
-  createdBy: string;
-  createdAt: Date;
-}
+import { Expense, ExpenseSplit } from '../types';
+import { collection, addDoc, serverTimestamp } from '@firebase/firestore';
 
 interface ExpensesState {
   expenses: Expense[];
@@ -43,8 +28,8 @@ export const fetchExpenses = createAsyncThunk(
     return expensesSnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
-      date: doc.data().date?.toDate() || new Date(),
-      createdAt: doc.data().createdAt?.toDate() || new Date(),
+      date: doc.data().date.toDate(),
+      createdAt: doc.data().createdAt.toDate(),
     } as Expense));
   }
 );
@@ -54,35 +39,30 @@ export const addExpense = createAsyncThunk(
   'expenses/addExpense',
   async (expense: Omit<Expense, 'id'>) => {
     const db = firestore();
-    
-    // Start a batch operation
-    const batch = db.batch();
+    const expensesCollection = db.collection('expenses');
     
     // Add the expense
-    const expenseRef = db.collection('expenses').doc();
-    batch.set(expenseRef, {
+    const docRef = await expensesCollection.add({
       ...expense,
       date: firestore.Timestamp.fromDate(expense.date),
       createdAt: firestore.Timestamp.fromDate(expense.createdAt),
     });
     
-    // Update the group's total expenses
+    // Update group total
     const groupRef = db.collection('groups').doc(expense.groupId);
-    const groupDoc = await groupRef.get();
-    
-    if (groupDoc.exists) {
+    await db.runTransaction(async (transaction) => {
+      const groupDoc = await transaction.get(groupRef);
+      if (!groupDoc.exists) {
+        throw new Error('Group not found');
+      }
+      
       const currentTotal = groupDoc.data()?.totalExpenses || 0;
-      batch.update(groupRef, {
+      transaction.update(groupRef, {
         totalExpenses: currentTotal + expense.amount
       });
-    }
+    });
     
-    // Commit the batch
-    await batch.commit();
-    
-    // Get the newly created expense
-    const newExpense = await expenseRef.get();
-    
+    const newExpense = await docRef.get();
     return {
       id: newExpense.id,
       ...newExpense.data(),
@@ -135,29 +115,53 @@ export const deleteExpense = createAsyncThunk(
 export const calculateBalances = createAsyncThunk(
   'expenses/calculateBalances',
   async (groupId: string) => {
-    const expensesSnapshot = await firestore()
+    const db = firestore();
+    const balances: { [key: string]: number } = {};
+
+    // Get all expenses for the group
+    const expensesSnapshot = await db
       .collection('expenses')
       .where('groupId', '==', groupId)
+      .orderBy('date', 'desc')
       .get();
-    
-    const expenses = expensesSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-    } as Expense));
-    
-    // Calculate net balance for each user
-    const balances: { [userId: string]: number } = {};
-    
-    expenses.forEach(expense => {
-      // Add amount to the person who paid
-      balances[expense.paidBy] = (balances[expense.paidBy] || 0) + expense.amount;
+
+    // First pass: Calculate raw balances from expenses
+    expensesSnapshot.docs.forEach(doc => {
+      const expense = doc.data();
+      if (expense.type === 'payment') return; // Skip payment records in first pass
       
-      // Subtract each person's share
-      expense.splits.forEach(split => {
+      const paidBy = expense.paidBy;
+      const splits = expense.splits as ExpenseSplit[];
+      
+      // Add the full amount to the payer's balance (positive means they are owed money)
+      balances[paidBy] = (balances[paidBy] || 0) + expense.amount;
+      
+      // Subtract each person's share from their balance
+      splits.forEach(split => {
         balances[split.userId] = (balances[split.userId] || 0) - split.amount;
       });
     });
-    
+
+    try {
+      // Get all completed payments
+      const paymentsSnapshot = await db
+        .collection('payments')
+        .where('groupId', '==', groupId)
+        .get();
+
+      // Second pass: Apply payments to adjust balances
+      paymentsSnapshot.docs.forEach(doc => {
+        const payment = doc.data();
+        // When someone pays, their balance increases (they owe less)
+        balances[payment.payerId] = (balances[payment.payerId] || 0) + payment.amount;
+        // The person receiving the payment has their balance decrease (they are owed less)
+        balances[payment.payeeId] = (balances[payment.payeeId] || 0) - payment.amount;
+      });
+    } catch (error) {
+      // If payments collection doesn't exist yet, just continue with expense-based balances
+      console.log('No payments collection yet:', error);
+    }
+
     return balances;
   }
 );
@@ -165,51 +169,57 @@ export const calculateBalances = createAsyncThunk(
 // Record a payment between users
 export const recordPayment = createAsyncThunk(
   'expenses/recordPayment',
-  async ({ 
-    groupId, 
-    fromUserId, 
-    toUserId, 
-    amount, 
-    date, 
-    createdBy 
-  }: { 
-    groupId: string; 
-    fromUserId: string; 
-    toUserId: string; 
-    amount: number; 
-    date: Date; 
-    createdBy: string; 
-  }) => {
-    const db = firestore();
-    
-    // Create a payment record
-    const paymentData = {
-      groupId,
-      description: 'Payment',
-      amount,
-      paidBy: fromUserId,
-      date: firestore.Timestamp.fromDate(date),
-      splits: [
-        {
-          userId: toUserId,
-          amount
-        }
-      ],
-      isPayment: true,
-      createdBy,
-      createdAt: firestore.Timestamp.now(),
-    };
-    
-    // Add the payment to the expenses collection
-    const paymentRef = await db.collection('expenses').add(paymentData);
-    const newPayment = await paymentRef.get();
-    
-    return {
-      id: newPayment.id,
-      ...newPayment.data(),
-      date: newPayment.data().date.toDate(),
-      createdAt: newPayment.data().createdAt.toDate(),
-    } as Expense;
+  async ({ groupId, payerId, payeeId, amount }: { groupId: string; payerId: string; payeeId: string; amount: number }, { dispatch }) => {
+    try {
+      const db = firestore();
+      
+      // Start a batch operation
+      const batch = db.batch();
+      
+      // Add the payment record
+      const paymentRef = db.collection('payments').doc();
+      const paymentData = {
+        groupId,
+        payerId,
+        payeeId,
+        amount,
+        createdAt: firestore.Timestamp.now(),
+        status: 'completed'
+      };
+      
+      batch.set(paymentRef, paymentData);
+
+      // Create a virtual expense to represent the payment
+      const expenseRef = db.collection('expenses').doc();
+      const expenseData = {
+        groupId,
+        description: 'Payment Settlement',
+        amount: amount,
+        paidBy: payerId,
+        date: firestore.Timestamp.now(),
+        splits: [
+          {
+            userId: payeeId,
+            amount: amount
+          }
+        ],
+        createdBy: payerId,
+        createdAt: firestore.Timestamp.now(),
+        type: 'payment'
+      };
+      
+      batch.set(expenseRef, expenseData);
+
+      // Commit both operations
+      await batch.commit();
+
+      // After recording the payment, recalculate balances
+      const balances = await dispatch(calculateBalances(groupId)).unwrap();
+      return balances;
+    } catch (error) {
+      console.error('Error recording payment:', error);
+      throw error;
+    }
   }
 );
 
@@ -237,7 +247,7 @@ const expensesSlice = createSlice({
       })
       .addCase(addExpense.fulfilled, (state, action) => {
         state.loading = false;
-        state.expenses = [action.payload, ...state.expenses];
+        state.expenses.unshift(action.payload);
       })
       .addCase(addExpense.rejected, (state, action) => {
         state.loading = false;
@@ -246,8 +256,16 @@ const expensesSlice = createSlice({
       .addCase(deleteExpense.fulfilled, (state, action) => {
         state.expenses = state.expenses.filter(expense => expense.id !== action.payload);
       })
-      .addCase(recordPayment.fulfilled, (state, action) => {
-        state.expenses = [action.payload, ...state.expenses];
+      .addCase(recordPayment.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(recordPayment.fulfilled, (state) => {
+        state.loading = false;
+      })
+      .addCase(recordPayment.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.error.message || 'Failed to record payment';
       });
   },
 });

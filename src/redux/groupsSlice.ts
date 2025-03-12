@@ -104,6 +104,16 @@ export const addMembersToGroup = createAsyncThunk(
   }
 );
 
+// Delete a group
+export const deleteGroup = createAsyncThunk(
+  'groups/deleteGroup',
+  async (groupId: string) => {
+    const db = firestore();
+    await db.collection('groups').doc(groupId).delete();
+    return groupId;
+  }
+);
+
 const groupsSlice = createSlice({
   name: 'groups',
   initialState,
@@ -161,6 +171,21 @@ const groupsSlice = createSlice({
         if (state.currentGroup && state.currentGroup.id === action.payload.id) {
           state.currentGroup = action.payload;
         }
+      })
+      .addCase(deleteGroup.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(deleteGroup.fulfilled, (state, action) => {
+        state.loading = false;
+        state.groups = state.groups.filter(group => group.id !== action.payload);
+        if (state.currentGroup?.id === action.payload) {
+          state.currentGroup = null;
+        }
+      })
+      .addCase(deleteGroup.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.error.message || 'Failed to delete group';
       });
   },
 });

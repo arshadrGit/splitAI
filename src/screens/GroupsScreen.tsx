@@ -9,12 +9,13 @@ import {
   TouchableOpacity,
   Image,
   Modal,
-  ScrollView
+  ScrollView,
+  Pressable
 } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
-import { useNavigation } from '@react-navigation/native';
-import { RootState } from '../redux/store';
-import { fetchGroups, createGroup } from '../redux/groupsSlice';
+import { useNavigation, NavigationProp } from '@react-navigation/native';
+import { AppDispatch, RootState } from '../redux/store';
+import { fetchGroups, createGroup, deleteGroup } from '../redux/groupsSlice';
 import { fetchFriends } from '../redux/friendsSlice';
 import { useTheme } from '../themes/ThemeProvider';
 import { ThemeText } from '../components/ThemeText';
@@ -22,6 +23,14 @@ import { CustomButton } from '../components/CustomButton';
 import { Card } from '../components/Card';
 import { Header } from '../components/Header';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import Swipeable from 'react-native-gesture-handler/Swipeable';
+import { Group } from '../types';
+
+type RootStackParamList = {
+  GroupDetail: { groupId: string };
+  Friends: undefined;
+};
 
 export const GroupsScreen = () => {
   const [groupName, setGroupName] = useState('');
@@ -29,8 +38,8 @@ export const GroupsScreen = () => {
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
   
-  const dispatch = useDispatch();
-  const navigation = useNavigation();
+  const dispatch = useDispatch<AppDispatch>();
+  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const { theme } = useTheme();
   const { groups, loading: groupsLoading } = useSelector((state: RootState) => state.groups);
   const { friends } = useSelector((state: RootState) => state.friends);
@@ -87,163 +96,206 @@ export const GroupsScreen = () => {
     navigation.navigate('GroupDetail', { groupId });
   };
 
+  const handleDeleteGroup = (groupId: string) => {
+    Alert.alert(
+      'Delete Group',
+      'Are you sure you want to delete this group? This action cannot be undone.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await dispatch(deleteGroup(groupId)).unwrap();
+              Alert.alert('Success', 'Group deleted successfully');
+            } catch (error: any) {
+              Alert.alert('Error', error.message || 'Failed to delete group');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const renderRightActions = (groupId: string) => {
+    return (
+      <Pressable
+        style={[styles.deleteAction, { backgroundColor: theme.colors.error }]}
+        onPress={() => handleDeleteGroup(groupId)}
+      >
+        <Icon name="delete" size={24} color="#FFFFFF" />
+      </Pressable>
+    );
+  };
+
   const renderGroupItem = ({ item }: { item: any }) => {
     return (
-      <TouchableOpacity onPress={() => navigateToGroupDetail(item.id)}>
-        <Card style={styles.groupCard}>
-          <View style={styles.groupInfo}>
-            <View style={styles.groupLeft}>
-              <View style={[styles.avatarContainer, { backgroundColor: theme.colors.primary }]}>
-                <ThemeText style={styles.avatarText}>
-                  {item.name.charAt(0).toUpperCase()}
-                </ThemeText>
+      <Swipeable
+        renderRightActions={() => renderRightActions(item.id)}
+        overshootRight={false}
+      >
+        <TouchableOpacity onPress={() => navigateToGroupDetail(item.id)}>
+          <Card style={styles.groupCard}>
+            <View style={styles.groupInfo}>
+              <View style={styles.groupLeft}>
+                <View style={[styles.avatarContainer, { backgroundColor: theme.colors.primary }]}>
+                  <ThemeText style={styles.avatarText}>
+                    {item.name.charAt(0).toUpperCase()}
+                  </ThemeText>
+                </View>
+                <View>
+                  <ThemeText variant="title" style={styles.groupName}>
+                    {item.name}
+                  </ThemeText>
+                  <ThemeText variant="caption">
+                    {item.members.length} {item.members.length === 1 ? 'member' : 'members'}
+                  </ThemeText>
+                </View>
               </View>
-              <View>
-                <ThemeText variant="title" style={styles.groupName}>
-                  {item.name}
-                </ThemeText>
-                <ThemeText variant="caption">
-                  {item.members.length} {item.members.length === 1 ? 'member' : 'members'}
-                </ThemeText>
-              </View>
+              <Icon name="chevron-right" size={24} color={theme.colors.text} />
             </View>
-            <Icon name="chevron-right" size={24} color={theme.colors.text} />
-          </View>
-        </Card>
-      </TouchableOpacity>
+          </Card>
+        </TouchableOpacity>
+      </Swipeable>
     );
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      <Header 
-        title="Groups" 
-        rightIcon="plus"
-        onRightPress={() => setShowCreateGroup(true)}
-      />
-      
-      {groupsLoading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.colors.primary} />
-        </View>
-      ) : (
-        <FlatList
-          data={groups}
-          renderItem={renderGroupItem}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContent}
-          ListEmptyComponent={
-            <View style={styles.emptyState}>
-              <Image 
-                source={require('../assets/images/empty-activity.png')} 
-                style={styles.emptyImage}
-                resizeMode="contain"
-              />
-              <ThemeText variant="title" style={styles.emptyTitle}>No Groups Yet</ThemeText>
-              <ThemeText style={styles.emptyText}>
-                Create a group to start splitting expenses with friends
-              </ThemeText>
-              <CustomButton
-                title="Create a Group"
-                onPress={() => setShowCreateGroup(true)}
-                icon={<Icon name="plus" size={20} color="#FFFFFF" />}
-              />
-            </View>
-          }
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        <Header 
+          title="Groups" 
+          rightIcon="plus"
+          onRightPress={() => setShowCreateGroup(true)}
         />
-      )}
-      
-      {/* Create Group Modal */}
-      <Modal
-        visible={showCreateGroup}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setShowCreateGroup(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: theme.colors.card }]}>
-            <View style={styles.modalHeader}>
-              <ThemeText variant="title">Create a New Group</ThemeText>
-              <TouchableOpacity onPress={() => setShowCreateGroup(false)}>
-                <Icon name="close" size={24} color={theme.colors.text} />
-              </TouchableOpacity>
-            </View>
-            
-            <View style={styles.inputContainer}>
-              <Icon name="account-group" size={24} color={theme.colors.text} style={styles.inputIcon} />
-              <TextInput
-                style={[styles.input, { 
-                  borderColor: theme.colors.border,
-                  color: theme.colors.text,
-                  backgroundColor: theme.colors.background
-                }]}
-                placeholder="Group Name"
-                placeholderTextColor={theme.colors.placeholder}
-                value={groupName}
-                onChangeText={setGroupName}
-              />
-            </View>
-            
-            <ThemeText variant="subtitle" style={styles.sectionTitle}>Add Friends</ThemeText>
-            
-            {friends.length > 0 ? (
-              <ScrollView style={styles.friendsList}>
-                {friends.map(friend => (
-                  <TouchableOpacity 
-                    key={friend.id} 
-                    style={[
-                      styles.friendItem,
-                      selectedFriends.includes(friend.friendId) && {
-                        backgroundColor: `${theme.colors.primary}20`
-                      }
-                    ]}
-                    onPress={() => toggleFriendSelection(friend.friendId)}
-                  >
-                    <View style={styles.friendItemLeft}>
-                      <View style={[styles.checkboxContainer, {
-                        borderColor: theme.colors.primary,
-                        backgroundColor: selectedFriends.includes(friend.friendId) 
-                          ? theme.colors.primary 
-                          : 'transparent'
-                      }]}>
-                        {selectedFriends.includes(friend.friendId) && (
-                          <Icon name="check" size={16} color="#FFFFFF" />
-                        )}
-                      </View>
-                      <ThemeText>{friend.email}</ThemeText>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            ) : (
-              <View style={styles.noFriendsContainer}>
-                <ThemeText style={styles.noFriendsText}>
-                  You need to add friends before creating a group
+        
+        {groupsLoading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={theme.colors.primary} />
+          </View>
+        ) : (
+          <FlatList
+            data={groups}
+            renderItem={renderGroupItem}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.listContent}
+            ListEmptyComponent={
+              <View style={styles.emptyState}>
+                <Image 
+                  source={require('../assets/images/empty-activity.png')} 
+                  style={styles.emptyImage}
+                  resizeMode="contain"
+                />
+                <ThemeText variant="title" style={styles.emptyTitle}>No Groups Yet</ThemeText>
+                <ThemeText style={styles.emptyText}>
+                  Create a group to start splitting expenses with friends
                 </ThemeText>
                 <CustomButton
-                  title="Add Friends"
-                  onPress={() => {
-                    setShowCreateGroup(false);
-                    navigation.navigate('Friends');
-                  }}
-                  variant="outline"
-                  style={styles.addFriendsButton}
+                  title="Create a Group"
+                  onPress={() => setShowCreateGroup(true)}
+                  icon={<Icon name="plus" size={20} color="#FFFFFF" />}
                 />
               </View>
-            )}
-            
-            <CustomButton
-              title="Create Group"
-              onPress={handleCreateGroup}
-              loading={loading}
-              disabled={!groupName.trim() || friends.length === 0}
-              style={styles.createButton}
-              icon={<Icon name="check" size={20} color="#FFFFFF" />}
-            />
+            }
+          />
+        )}
+        
+        {/* Create Group Modal */}
+        <Modal
+          visible={showCreateGroup}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={() => setShowCreateGroup(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { backgroundColor: theme.colors.card }]}>
+              <View style={styles.modalHeader}>
+                <ThemeText variant="title">Create a New Group</ThemeText>
+                <TouchableOpacity onPress={() => setShowCreateGroup(false)}>
+                  <Icon name="close" size={24} color={theme.colors.text} />
+                </TouchableOpacity>
+              </View>
+              
+              <View style={styles.inputContainer}>
+                <Icon name="account-group" size={24} color={theme.colors.text} style={styles.inputIcon} />
+                <TextInput
+                  style={[styles.input, { 
+                    borderColor: theme.colors.border,
+                    color: theme.colors.text,
+                    backgroundColor: theme.colors.background
+                  }]}
+                  placeholder="Group Name"
+                  placeholderTextColor={theme.colors.placeholder}
+                  value={groupName}
+                  onChangeText={setGroupName}
+                />
+              </View>
+              
+              <ThemeText variant="subtitle" style={styles.sectionTitle}>Add Friends</ThemeText>
+              
+              {friends.length > 0 ? (
+                <ScrollView style={styles.friendsList}>
+                  {friends.map(friend => (
+                    <TouchableOpacity 
+                      key={friend.id} 
+                      style={[
+                        styles.friendItem,
+                        selectedFriends.includes(friend.friendId) && {
+                          backgroundColor: `${theme.colors.primary}20`
+                        }
+                      ]}
+                      onPress={() => toggleFriendSelection(friend.friendId)}
+                    >
+                      <View style={styles.friendItemLeft}>
+                        <View style={[styles.checkboxContainer, {
+                          borderColor: theme.colors.primary,
+                          backgroundColor: selectedFriends.includes(friend.friendId) 
+                            ? theme.colors.primary 
+                            : 'transparent'
+                        }]}>
+                          {selectedFriends.includes(friend.friendId) && (
+                            <Icon name="check" size={16} color="#FFFFFF" />
+                          )}
+                        </View>
+                        <ThemeText>{friend.email}</ThemeText>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              ) : (
+                <View style={styles.noFriendsContainer}>
+                  <ThemeText style={styles.noFriendsText}>
+                    You need to add friends before creating a group
+                  </ThemeText>
+                  <CustomButton
+                    title="Add Friends"
+                    onPress={() => {
+                      setShowCreateGroup(false);
+                      navigation.navigate('Friends');
+                    }}
+                    variant="outline"
+                    style={styles.addFriendsButton}
+                  />
+                </View>
+              )}
+              
+              <CustomButton
+                title="Create Group"
+                onPress={handleCreateGroup}
+                loading={loading}
+                disabled={!groupName.trim() || friends.length === 0}
+                style={styles.createButton}
+                icon={<Icon name="check" size={20} color="#FFFFFF" />}
+              />
+            </View>
           </View>
-        </View>
-      </Modal>
-    </View>
+        </Modal>
+      </View>
+    </GestureHandlerRootView>
   );
 };
 
@@ -383,6 +435,13 @@ const styles = StyleSheet.create({
   },
   createButton: {
     marginTop: 10,
+  },
+  deleteAction: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 70,
+    height: '100%',
+    marginBottom: 12,
   },
 });
 

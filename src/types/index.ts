@@ -41,6 +41,23 @@ export interface Expense {
   createdAt: Date;
 }
 
+export interface Payment {
+  id: string;
+  groupId: string;
+  fromUserId: string;
+  toUserId: string;
+  amount: number;
+  date: Date;
+  createdBy: string;
+  createdAt: Date;
+}
+
+export interface Settlement {
+  from: string;
+  to: string;
+  amount: number;
+}
+
 export interface Activity {
   id: string;
   userId: string;

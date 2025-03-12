@@ -11,7 +11,7 @@ import {
   ScrollView
 } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
-import { RootState } from '../redux/store';
+import { AppDispatch, RootState } from '../redux/store';
 import { fetchGroupById } from '../redux/groupsSlice';
 import { calculateBalances, recordPayment } from '../redux/expensesSlice';
 import { useTheme } from '../themes/ThemeProvider';
@@ -19,17 +19,30 @@ import { ThemeText } from '../components/ThemeText';
 import { CustomButton } from '../components/CustomButton';
 import { Card } from '../components/Card';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
 
-const SettleUpScreen = ({ route, navigation }) => {
+interface Settlement {
+  from: string;
+  to: string;
+  amount: string;
+}
+
+type RootStackParamList = {
+  SettleUp: { groupId: string };
+};
+
+type Props = NativeStackScreenProps<RootStackParamList, 'SettleUp'>;
+
+const SettleUpScreen = ({ route, navigation }: Props) => {
   const { groupId } = route.params;
-  const [balances, setBalances] = useState({});
-  const [settlements, setSettlements] = useState([]);
+  const [balances, setBalances] = useState<Record<string, number>>({});
+  const [settlements, setSettlements] = useState<Settlement[]>([]);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [selectedSettlement, setSelectedSettlement] = useState(null);
+  const [selectedSettlement, setSelectedSettlement] = useState<Settlement | null>(null);
   const [amount, setAmount] = useState('');
   const [loading, setLoading] = useState(false);
   
-  const dispatch = useDispatch();
+  const dispatch = useDispatch<AppDispatch>();
   const { theme } = useTheme();
   const { currentGroup, loading: groupLoading } = useSelector((state: RootState) => state.groups);
   const { friends } = useSelector((state: RootState) => state.friends);
@@ -49,60 +62,56 @@ const SettleUpScreen = ({ route, navigation }) => {
       setBalances(result);
       calculateSettlements(result);
     } catch (error) {
+      console.log('error: ',error);
+      
       Alert.alert('Error', 'Failed to load balances');
     } finally {
       setLoading(false);
     }
   };
 
-  const calculateSettlements = (balanceData) => {
-    // Create a list of users with their balances
-    const users = Object.keys(balanceData).map(userId => ({
-      id: userId,
-      balance: balanceData[userId]
-    }));
+  const calculateSettlements = (balanceData: Record<string, number>) => {
+    if (!user) return;
 
-    // Sort by balance (negative first, then positive)
-    users.sort((a, b) => a.balance - b.balance);
+    // First, separate the user's balance from others
+    const userBalance = balanceData[user.id] || 0;
+    const otherUsers = Object.entries(balanceData)
+      .filter(([userId]) => userId !== user.id)
+      .map(([userId, balance]) => ({
+        id: userId,
+        balance
+      }));
 
-    const settlements = [];
-    let i = 0; // index for negative balances (users who are owed money)
-    let j = users.length - 1; // index for positive balances (users who owe money)
+    const newSettlements: Settlement[] = [];
 
-    while (i < j) {
-      const debtor = users[i]; // user with negative balance (is owed money)
-      const creditor = users[j]; // user with positive balance (owes money)
-
-      if (Math.abs(debtor.balance) < 0.01 || Math.abs(creditor.balance) < 0.01) {
-        // Skip users with zero balance
-        if (Math.abs(debtor.balance) < 0.01) i++;
-        if (Math.abs(creditor.balance) < 0.01) j--;
-        continue;
-      }
-
-      // Calculate the amount to settle
-      const amount = Math.min(Math.abs(debtor.balance), creditor.balance);
-
-      // Add the settlement
-      settlements.push({
-        from: creditor.id, // user who owes money
-        to: debtor.id, // user who is owed money
-        amount: amount.toFixed(2)
-      });
-
-      // Update balances
-      debtor.balance += amount;
-      creditor.balance -= amount;
-
-      // Move to next user if balance is settled
-      if (Math.abs(debtor.balance) < 0.01) i++;
-      if (Math.abs(creditor.balance) < 0.01) j--;
+    if (userBalance > 0) {
+      // User is owed money
+      otherUsers
+        .filter(other => other.balance < 0) // Only include users who owe money
+        .forEach(debtor => {
+          newSettlements.push({
+            from: debtor.id,
+            to: user.id,
+            amount: Math.min(Math.abs(debtor.balance), userBalance).toFixed(2)
+          });
+        });
+    } else if (userBalance < 0) {
+      // User owes money
+      otherUsers
+        .filter(other => other.balance > 0) // Only include users who are owed money
+        .forEach(creditor => {
+          newSettlements.push({
+            from: user.id,
+            to: creditor.id,
+            amount: Math.min(Math.abs(userBalance), creditor.balance).toFixed(2)
+          });
+        });
     }
 
-    setSettlements(settlements);
+    setSettlements(newSettlements);
   };
 
-  const getUserName = (userId) => {
+  const getUserName = (userId: string) => {
     if (userId === user?.id) return 'You';
     
     const friend = friends.find(f => 
@@ -112,37 +121,47 @@ const SettleUpScreen = ({ route, navigation }) => {
     return friend ? (friend.displayName || friend.email) : 'Unknown User';
   };
 
-  const handleSettlePayment = (settlement) => {
+  const handleSettlePayment = (settlement: Settlement) => {
     setSelectedSettlement(settlement);
     setAmount(settlement.amount);
     setShowPaymentModal(true);
   };
 
   const handleRecordPayment = async () => {
-    if (!selectedSettlement) return;
+    if (!selectedSettlement || !user) return;
     
     try {
       setLoading(true);
-      await dispatch(recordPayment({
+      console.log('Recording payment:', {
         groupId,
-        fromUserId: selectedSettlement.from,
-        toUserId: selectedSettlement.to,
+        payerId: selectedSettlement.from,
+        payeeId: selectedSettlement.to,
+        amount: parseFloat(amount)
+      });
+
+      const result = await dispatch(recordPayment({
+        groupId,
+        payerId: selectedSettlement.from,
+        payeeId: selectedSettlement.to,
         amount: parseFloat(amount),
-        date: new Date(),
-        createdBy: user.id
       })).unwrap();
+
+      console.log('Payment recorded, new balances:', result);
       
       setShowPaymentModal(false);
-      loadBalances(); // Refresh balances
+      setSelectedSettlement(null);
+      setAmount('');
+      await loadBalances(); // Refresh balances
       Alert.alert('Success', 'Payment recorded successfully');
     } catch (error) {
-      Alert.alert('Error', 'Failed to record payment');
+      console.error('Payment recording failed:', error);
+      Alert.alert('Error', error instanceof Error ? error.message : 'Failed to record payment');
     } finally {
       setLoading(false);
     }
   };
 
-  const renderSettlementItem = ({ item }) => {
+  const renderSettlementItem = ({ item }: { item: Settlement }) => {
     const isUserInvolved = item.from === user?.id || item.to === user?.id;
     const fromName = getUserName(item.from);
     const toName = getUserName(item.to);
@@ -155,7 +174,11 @@ const SettleUpScreen = ({ route, navigation }) => {
         <View style={styles.settlementInfo}>
           <View style={styles.settlementDetails}>
             <ThemeText variant="title" style={styles.settlementTitle}>
-              {fromName} owes {toName}
+              {item.to === user?.id ? 
+                `${fromName} owes you` : 
+                item.from === user?.id ? 
+                  `You owe ${toName}` :
+                  `${fromName} owes ${toName}`}
             </ThemeText>
             <ThemeText variant="subtitle" style={styles.settlementAmount}>
               ${parseFloat(item.amount).toFixed(2)}
@@ -190,11 +213,11 @@ const SettleUpScreen = ({ route, navigation }) => {
           Your Balance
         </ThemeText>
         {user && balances[user.id] !== undefined ? (
-          <ThemeText variant="header" style={[
+          <ThemeText variant="title" style={[
             styles.balanceAmount,
-            { color: balances[user.id] < 0 ? theme.colors.success : balances[user.id] > 0 ? theme.colors.error : theme.colors.text }
+            { color: balances[user.id] > 0 ? theme.colors.success : balances[user.id] < 0 ? theme.colors.error : theme.colors.text }
           ]}>
-            {balances[user.id] < 0 ? 'You are owed ' : balances[user.id] > 0 ? 'You owe ' : ''}
+            {balances[user.id] > 0 ? 'You are owed ' : balances[user.id] < 0 ? 'You owe ' : ''}
             ${Math.abs(balances[user.id] || 0).toFixed(2)}
           </ThemeText>
         ) : (
