@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   View, 
   StyleSheet, 
@@ -9,10 +9,11 @@ import {
   TouchableOpacity,
   Image,
   Share,
-  Modal
+  Modal,
+  Keyboard
 } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
-import { RootState } from '../redux/store';
+import { AppDispatch, RootState } from '../redux/store';
 import { 
   fetchFriends, 
   addFriend, 
@@ -27,6 +28,9 @@ import { Card } from '../components/Card';
 import { Header } from '../components/Header';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import Clipboard from '@react-native-clipboard/clipboard';
+import firestore from '@react-native-firebase/firestore';
+import debounce from 'lodash/debounce';
+import { User } from '../types';
 
 export const FriendsScreen = () => {
   const [email, setEmail] = useState('');
@@ -35,10 +39,16 @@ export const FriendsScreen = () => {
   const [showAddFriend, setShowAddFriend] = useState(false);
   const [showInviteOptions, setShowInviteOptions] = useState(false);
   const [inviteLink, setInviteLink] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<User[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [showManualAdd, setShowManualAdd] = useState(false);
+  const [manualName, setManualName] = useState('');
+  const [manualEmail, setManualEmail] = useState('');
   
-  const dispatch = useDispatch();
+  const dispatch = useDispatch<AppDispatch>();
   const { theme } = useTheme();
-  const { friends,incomingRequests, loading: friendsLoading } = useSelector((state: RootState) => state.friends);
+  const { friends, loading: friendsLoading } = useSelector((state: RootState) => state.friends);
   const user = useSelector((state: RootState) => state.auth.user);
 
   useEffect(() => {
@@ -47,7 +57,43 @@ export const FriendsScreen = () => {
     }
   }, [dispatch, user]);
 
-  console.log('friends', friends);
+  // Debounced search function
+  const debouncedSearch = useCallback(
+    debounce(async (query: string) => {
+      if (!query.trim()) {
+        setSearchResults([]);
+        setIsSearching(false);
+        return;
+      }
+
+      setIsSearching(true);
+      try {
+        const usersRef = firestore().collection('users');
+        const querySnapshot = await usersRef
+          .where('email', '>=', query.toLowerCase())
+          .where('email', '<=', query.toLowerCase() + '\uf8ff')
+          .limit(10)
+          .get();
+
+        const results = querySnapshot.docs
+          .map(doc => ({ id: doc.id, ...doc.data() } as User))
+          .filter(user => user.id !== user?.id); // Exclude current user
+
+        setSearchResults(results);
+      } catch (error) {
+        console.error('Error searching users:', error);
+        Alert.alert('Error', 'Failed to search users');
+      } finally {
+        setIsSearching(false);
+      }
+    }, 500),
+    []
+  );
+
+  useEffect(() => {
+    debouncedSearch(searchQuery);
+    return () => debouncedSearch.cancel();
+  }, [searchQuery, debouncedSearch]);
 
   const validateEmail = (email: string) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -62,33 +108,47 @@ export const FriendsScreen = () => {
     return true;
   };
 
-  const handleAddFriend = async () => {
-    if (!validateEmail(email)) {
-      return;
-    }
-
+  const handleAddFriend = async (friendId: string, friendEmail?: string, skipUserCheck: boolean = false) => {
     if (!user) return;
 
     setLoading(true);
     try {
       await dispatch(addFriend({
         userId: user.id,
-        friendId: email,
+        friendId: friendId,
         status: 'pending',
         createdAt: new Date(),
+        email: friendEmail,
+        skipUserCheck
       })).unwrap();
       
-      // Refresh the friends list
       dispatch(fetchFriends(user.id));
-      
-      setEmail('');
+      setSearchQuery('');
+      setSearchResults([]);
       setShowAddFriend(false);
+      setShowManualAdd(false);
       Alert.alert('Success', 'Friend request sent');
     } catch (error: any) {
+      console.log(error);
       Alert.alert('Error', error.message || 'Failed to add friend');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleManualAdd = () => {
+    if (!manualName.trim()) {
+      Alert.alert('Error', 'Please enter a name');
+      return;
+    }
+
+    if (manualEmail && !validateEmail(manualEmail)) {
+      return;
+    }
+
+    handleAddFriend(manualName, manualEmail, true);
+    setManualName('');
+    setManualEmail('');
   };
 
   const handleGenerateInviteLink = async () => {
@@ -139,26 +199,14 @@ export const FriendsScreen = () => {
   };
 
   const renderFriendItem = ({ item }: { item: any }) => {
-    // Determine if this is a sent or received friendship
-    const isSent = item.userId === user?.id;
-    
-    // For sent requests, use the email or friendId
-    // For received requests, use the userId
-    const displayName = isSent 
-      ? item.email || item.displayName || item.friendId 
-      : item.displayName || item.userId;
-      
+    const displayName = item.displayName || item.email || item.friendId;
     const initial = displayName.charAt(0).toUpperCase();
-    const isPending = item.status === 'pending';
-    const isIncomingRequest = isPending && !isSent;
     
     return (
       <Card style={styles.friendCard}>
         <View style={styles.friendInfo}>
           <View style={styles.friendLeft}>
-            <View style={[styles.avatarContainer, { 
-              backgroundColor: isPending ? theme.colors.primary : theme.colors.secondary 
-            }]}>
+            <View style={[styles.avatarContainer, { backgroundColor: theme.colors.secondary }]}>
               <ThemeText style={styles.avatarText}>
                 {initial}
               </ThemeText>
@@ -167,41 +215,50 @@ export const FriendsScreen = () => {
               <ThemeText variant="title" style={styles.friendName}>
                 {displayName}
               </ThemeText>
-              {isPending && (
-                <View style={styles.statusContainer}>
-                  <Icon name="clock-outline" size={12} color={theme.colors.notification} />
-                  <ThemeText variant="caption" style={{ color: theme.colors.notification, marginLeft: 4 }}>
-                    {isIncomingRequest ? 'Request Received' : 'Pending'}
-                  </ThemeText>
-                </View>
+              {item.email && item.email !== displayName && (
+                <ThemeText variant="caption" style={styles.friendEmail}>
+                  {item.email}
+                </ThemeText>
               )}
             </View>
           </View>
           
-          {isIncomingRequest ? (
-            <View style={styles.requestActions}>
-              <TouchableOpacity 
-                style={[styles.actionButton, styles.acceptButton]} 
-                onPress={() => handleAcceptRequest(item.id)}
-              >
-                <Icon name="check" size={18} color={theme.colors.success} />
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.actionButton, styles.rejectButton]}
-                onPress={() => handleRejectRequest(item.id)}
-              >
-                <Icon name="close" size={18} color={theme.colors.error} />
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <TouchableOpacity style={styles.moreButton}>
-              <Icon name="dots-vertical" size={20} color={theme.colors.text} />
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity style={styles.moreButton}>
+            <Icon name="dots-vertical" size={20} color={theme.colors.text} />
+          </TouchableOpacity>
         </View>
       </Card>
     );
   };
+
+  const renderSearchResult = ({ item }: { item: User }) => (
+    <Card style={styles.searchResultCard}>
+      <View style={styles.searchResultInfo}>
+        <View style={[styles.avatarContainer, { backgroundColor: theme.colors.primary }]}>
+          <ThemeText style={styles.avatarText}>
+            {item.displayName?.charAt(0).toUpperCase() || item.email.charAt(0).toUpperCase()}
+          </ThemeText>
+        </View>
+        <View>
+          <ThemeText variant="title" style={styles.searchResultName}>
+            {item.displayName || item.email}
+          </ThemeText>
+          {item.displayName && (
+            <ThemeText variant="caption" style={styles.searchResultEmail}>
+              {item.email}
+            </ThemeText>
+          )}
+        </View>
+      </View>
+      <CustomButton
+        title="Add Friend"
+        onPress={() => handleAddFriend(item.id)}
+        variant="outline"
+        style={styles.addButton}
+        icon={<Icon name="account-plus" size={20} color={theme.colors.primary} />}
+      />
+    </Card>
+  );
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -215,25 +272,46 @@ export const FriendsScreen = () => {
         <Card style={styles.addFriendCard}>
           <ThemeText variant="title" style={styles.sectionTitle}>Add Friend</ThemeText>
           <View style={styles.inputContainer}>
-            <Icon name="email-outline" size={20} color={theme.colors.text} style={styles.inputIcon} />
+            <Icon name="magnify" size={20} color={theme.colors.text} style={styles.inputIcon} />
             <TextInput
               style={[styles.input, { 
                 color: theme.colors.text,
-                borderColor: emailError ? theme.colors.error : theme.colors.border,
+                borderColor: theme.colors.border,
               }]}
-              placeholder="Friend's Email"
+              placeholder="Search by name or email"
               placeholderTextColor={theme.colors.placeholder}
-              value={email}
-              onChangeText={(text) => {
-                setEmail(text);
-                if (emailError) validateEmail(text);
-              }}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
               autoCapitalize="none"
               keyboardType="email-address"
-              onBlur={() => validateEmail(email)}
             />
           </View>
-          {emailError ? <ThemeText style={[styles.errorText, { color: theme.colors.error }]}>{emailError}</ThemeText> : null}
+          
+          {isSearching ? (
+            <ActivityIndicator style={styles.searchLoading} color={theme.colors.primary} />
+          ) : searchResults.length === 0 && searchQuery.trim() !== '' ? (
+            <View style={styles.noResultsContainer}>
+              <ThemeText style={styles.noResultsText}>No users found</ThemeText>
+              <CustomButton
+                title="Add Manually"
+                onPress={() => {
+                  setShowManualAdd(true);
+                  Keyboard.dismiss();
+                }}
+                variant="outline"
+                style={styles.manualAddButton}
+                icon={<Icon name="account-plus" size={20} color={theme.colors.primary} />}
+              />
+            </View>
+          ) : (
+            <FlatList
+              data={searchResults}
+              renderItem={renderSearchResult}
+              keyExtractor={(item) => item.id}
+              style={styles.searchResults}
+              keyboardShouldPersistTaps="handled"
+            />
+          )}
           
           <View style={styles.buttonContainer}>
             <CustomButton
@@ -243,46 +321,112 @@ export const FriendsScreen = () => {
               style={styles.button}
               icon={<Icon name="share-variant" size={20} color={theme.colors.primary} />}
             />
+          </View>
+        </Card>
+      )}
+
+      {/* Manual Add Friend Modal */}
+      <Modal
+        visible={showManualAdd}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowManualAdd(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.colors.card }]}>
+            <View style={styles.modalHeader}>
+              <ThemeText variant="title">Add Friend Manually</ThemeText>
+              <TouchableOpacity onPress={() => setShowManualAdd(false)}>
+                <Icon name="close" size={24} color={theme.colors.text} />
+              </TouchableOpacity>
+            </View>
+            
+            <View style={styles.inputContainer}>
+              <Icon name="account" size={20} color={theme.colors.text} style={styles.inputIcon} />
+              <TextInput
+                style={[styles.input, { 
+                  color: theme.colors.text,
+                  borderColor: theme.colors.border,
+                }]}
+                placeholder="Friend's Name"
+                placeholderTextColor={theme.colors.placeholder}
+                value={manualName}
+                onChangeText={setManualName}
+              />
+            </View>
+            
+            <View style={styles.inputContainer}>
+              <Icon name="email-outline" size={20} color={theme.colors.text} style={styles.inputIcon} />
+              <TextInput
+                style={[styles.input, { 
+                  color: theme.colors.text,
+                  borderColor: emailError ? theme.colors.error : theme.colors.border,
+                }]}
+                placeholder="Friend's Email (optional)"
+                placeholderTextColor={theme.colors.placeholder}
+                value={manualEmail}
+                onChangeText={(text) => {
+                  setManualEmail(text);
+                  if (emailError && text) validateEmail(text);
+                }}
+                autoCapitalize="none"
+                keyboardType="email-address"
+              />
+            </View>
+            {emailError ? <ThemeText style={[styles.errorText, { color: theme.colors.error }]}>{emailError}</ThemeText> : null}
+            
             <CustomButton
               title="Add Friend"
-              onPress={handleAddFriend}
-              style={styles.button}
+              onPress={handleManualAdd}
+              style={styles.modalButton}
               loading={loading}
               icon={<Icon name="account-plus" size={20} color="#FFFFFF" />}
             />
           </View>
-        </Card>
-      )}
+        </View>
+      </Modal>
       
       {friendsLoading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={theme.colors.primary} />
         </View>
       ) : (
-        <FlatList
-          data={[...friends]}
-          renderItem={renderFriendItem}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-          ListEmptyComponent={
-            <View style={styles.emptyState}>
-              <Image 
-                source={require('../assets/images/empty-activity.png')} 
-                style={styles.emptyImage}
-                resizeMode="contain"
-              />
-              <ThemeText variant="title" style={styles.emptyTitle}>No Friends Yet</ThemeText>
-              <ThemeText style={styles.emptyText}>Add friends to split expenses with them</ThemeText>
-              <CustomButton
-                title="Add a Friend"
-                onPress={() => setShowAddFriend(true)}
-                style={styles.addFriendButton}
-                icon={<Icon name="account-plus" size={20} color="#FFFFFF" />}
-              />
+        <View style={styles.friendsContainer}>
+          {/* Friends Section */}
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Icon name="account-group" size={20} color={theme.colors.secondary} />
+              <ThemeText variant="title" style={styles.sectionTitle}>
+                Friends ({friends.length})
+              </ThemeText>
             </View>
-          }
-        />
+            {friends.length > 0 ? (
+              <FlatList
+                data={friends}
+                renderItem={renderFriendItem}
+                keyExtractor={(item) => item.id}
+                contentContainerStyle={styles.listContent}
+                showsVerticalScrollIndicator={false}
+              />
+            ) : (
+              <View style={styles.emptyState}>
+                <Image 
+                  source={require('../assets/images/empty-activity.png')} 
+                  style={styles.emptyImage}
+                  resizeMode="contain"
+                />
+                <ThemeText variant="title" style={styles.emptyTitle}>No Friends Yet</ThemeText>
+                <ThemeText style={styles.emptyText}>Add friends to split expenses with them</ThemeText>
+                <CustomButton
+                  title="Add a Friend"
+                  onPress={() => setShowAddFriend(true)}
+                  style={styles.addFriendButton}
+                  icon={<Icon name="account-plus" size={20} color="#FFFFFF" />}
+                />
+              </View>
+            )}
+          </View>
+        </View>
       )}
       
       {/* Invite Options Modal */}
@@ -511,6 +655,69 @@ const styles = StyleSheet.create({
   },
   rejectButton: {
     borderColor: '#F44336',
+  },
+  searchResultCard: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+    padding: 12,
+  },
+  searchResultInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  searchResultName: {
+    fontWeight: '600',
+  },
+  searchResultEmail: {
+    marginTop: 2,
+    opacity: 0.7,
+  },
+  addButton: {
+    minWidth: 100,
+  },
+  searchResults: {
+    maxHeight: 200,
+    marginTop: 10,
+  },
+  searchLoading: {
+    marginTop: 20,
+  },
+  noResultsContainer: {
+    alignItems: 'center',
+    marginTop: 20,
+    marginBottom: 10,
+  },
+  noResultsText: {
+    marginBottom: 10,
+    opacity: 0.7,
+  },
+  manualAddButton: {
+    minWidth: 150,
+  },
+  modalButton: {
+    marginTop: 20,
+  },
+  friendsContainer: {
+    flex: 1,
+  },
+  section: {
+    marginBottom: 20,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.1)',
+  },
+  friendEmail: {
+    fontSize: 12,
+    opacity: 0.7,
+    marginTop: 2,
   },
 });
 

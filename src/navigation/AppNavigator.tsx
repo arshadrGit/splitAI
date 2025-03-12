@@ -8,8 +8,8 @@ import { useTheme } from '../themes/ThemeProvider';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 // Import screens
-import LoginScreen from '../screens/Auth/LoginScreen';
-import SignupScreen from '../screens/Auth/SignupScreen';
+import LoginScreen from '../screens/auth/LoginScreen';
+import SignupScreen from '../screens/auth/SignupScreen';
 import AccountScreen from '../screens/AccountScreen';
 import RecentActivityScreen from '../screens/RecentActivityScreen';
 import FriendsScreen from '../screens/FriendsScreen';
