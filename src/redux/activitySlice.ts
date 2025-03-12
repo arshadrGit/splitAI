@@ -34,26 +34,19 @@ export const fetchActivities = createAsyncThunk(
     const db = firestore();
     const activities: ActivityItem[] = [];
 
-    // Fetch personal expenses
-    const personalExpensesSnapshot = await db
+    // Fetch all expenses where the user is involved (either paid or part of splits)
+    const expensesSnapshot = await db
       .collection('expenses')
-      .where('paidBy', '==', userId)
+      .where('participants', 'array-contains', userId)
       .orderBy('createdAt', 'desc')
       .get();
 
-    // Fetch group expenses
-    const groupExpensesSnapshot = await db
-      .collection('expenses')
-      .where('splits', 'array-contains', { userId: userId })
-      .orderBy('createdAt', 'desc')
-      .get();
-
-    // Fetch payments
+    // Fetch all payments where user is either payer or payee
     let paymentsSnapshot;
     try {
       paymentsSnapshot = await db
         .collection('payments')
-        .where('payerId', '==', userId)
+        .where('participants', 'array-contains', userId)
         .orderBy('createdAt', 'desc')
         .get();
     } catch (error) {
@@ -61,45 +54,39 @@ export const fetchActivities = createAsyncThunk(
       paymentsSnapshot = { docs: [] };
     }
 
-    // Process personal expenses
-    for (const doc of personalExpensesSnapshot.docs) {
+    // Process expenses
+    for (const doc of expensesSnapshot.docs) {
       const expense = doc.data();
       const groupDoc = expense.groupId ? await db.collection('groups').doc(expense.groupId).get() : null;
-      
-      activities.push({
-        id: doc.id,
-        type: 'expense',
-        description: expense.description,
-        amount: expense.amount,
-        groupId: expense.groupId,
-        groupName: groupDoc?.data()?.name,
-        userId: userId,
-        paidBy: expense.paidBy,
-        createdAt: expense.createdAt.toDate(),
-        isGroupActivity: !!expense.groupId,
-        balance: expense.amount // Will be adjusted later
-      });
-    }
-
-    // Process group expenses
-    for (const doc of groupExpensesSnapshot.docs) {
-      const expense = doc.data();
-      const groupDoc = await db.collection('groups').doc(expense.groupId).get();
+      const paidByUser = expense.paidBy === userId;
       const userSplit = expense.splits.find((split: any) => split.userId === userId);
       
-      if (userSplit && expense.paidBy !== userId) {
+      if (userSplit) {
+        let balance = 0;
+        if (paidByUser) {
+          // If user paid, they are owed the total amount minus their share
+          balance = expense.amount - userSplit.amount;
+        } else {
+          // If user didn't pay, they owe their share
+          balance = -userSplit.amount;
+        }
+
+        // Get payer's display name
+        const payerDoc = await db.collection('users').doc(expense.paidBy).get();
+        const payerName = payerDoc.data()?.displayName || 'Unknown User';
+
         activities.push({
           id: doc.id,
           type: 'expense',
           description: expense.description,
-          amount: userSplit.amount,
+          amount: expense.amount,
           groupId: expense.groupId,
-          groupName: groupDoc.data()?.name,
+          groupName: groupDoc?.data()?.name,
           userId: userId,
-          paidBy: expense.paidBy,
+          paidBy: paidByUser ? 'You' : payerName,
           createdAt: expense.createdAt.toDate(),
-          isGroupActivity: true,
-          balance: -userSplit.amount // Negative because user owes this amount
+          isGroupActivity: !!expense.groupId,
+          balance: balance
         });
       }
     }
@@ -108,7 +95,13 @@ export const fetchActivities = createAsyncThunk(
     for (const doc of paymentsSnapshot.docs) {
       const payment = doc.data();
       const groupDoc = payment.groupId ? await db.collection('groups').doc(payment.groupId).get() : null;
+      const isPayer = payment.payerId === userId;
       
+      // Get the other party's name
+      const otherPartyId = isPayer ? payment.payeeId : payment.payerId;
+      const otherPartyDoc = await db.collection('users').doc(otherPartyId).get();
+      const otherPartyName = otherPartyDoc.data()?.displayName || 'Unknown User';
+
       activities.push({
         id: doc.id,
         type: 'payment',
@@ -117,11 +110,11 @@ export const fetchActivities = createAsyncThunk(
         groupId: payment.groupId,
         groupName: groupDoc?.data()?.name,
         userId: userId,
-        paidBy: payment.payerId,
-        paidTo: payment.payeeId,
+        paidBy: isPayer ? 'You' : otherPartyName,
+        paidTo: isPayer ? otherPartyName : 'You',
         createdAt: payment.createdAt.toDate(),
         isGroupActivity: !!payment.groupId,
-        balance: -payment.amount // Negative because it's a payment made
+        balance: isPayer ? -payment.amount : payment.amount
       });
     }
 

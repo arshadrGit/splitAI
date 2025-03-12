@@ -6828,6 +6828,32 @@ You should now be able to:
 
 ---
 
+_**User**_
+
+Please add one more option for enable/disable Dark theme. and also Integrate recent activty, at this this no any activty display while i create group expenses. 
+
+---
+
+_**Assistant**_
+
+I'll help you add the dark theme toggle and fix the recent activity display. First, let's add the theme toggle to the Settings screen:
+
+---
+
+_**Assistant**_
+
+```
+undefined
+```
+
+---
+
+_**Assistant**_
+
+
+
+---
+
 
 
 ---

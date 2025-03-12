@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, Alert, Switch } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState, AppDispatch } from '../redux/store';
 import { useTheme } from '../themes/ThemeProvider';
@@ -10,7 +10,7 @@ import { signOut } from '../redux/authSlice';
 
 export const SettingsScreen = ({ navigation }: any) => {
   const dispatch = useDispatch<AppDispatch>();
-  const { theme } = useTheme();
+  const { theme, isDark, toggleTheme } = useTheme();
   const user = useSelector((state: RootState) => state.auth.user);
 
   const settingsOptions = [
@@ -19,6 +19,20 @@ export const SettingsScreen = ({ navigation }: any) => {
       icon: 'account',
       onPress: () => navigation.navigate('EditProfile'),
       description: 'Edit your profile information'
+    },
+    {
+      title: 'Dark Theme',
+      icon: isDark ? 'weather-night' : 'white-balance-sunny',
+      onPress: toggleTheme,
+      description: 'Toggle dark/light theme',
+      rightElement: (
+        <Switch
+          value={isDark}
+          onValueChange={toggleTheme}
+          trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
+          thumbColor={isDark ? theme.colors.card : '#f4f3f4'}
+        />
+      )
     },
     {
       title: 'Privacy Policy',
@@ -62,7 +76,7 @@ export const SettingsScreen = ({ navigation }: any) => {
     }
   ];
 
-  const renderSettingItem = ({ title, icon, onPress, description }: any) => (
+  const renderSettingItem = ({ title, icon, onPress, description, rightElement }: any) => (
     <TouchableOpacity
       key={title}
       style={[styles.settingItem, { borderBottomColor: theme.colors.border }]}
@@ -81,7 +95,7 @@ export const SettingsScreen = ({ navigation }: any) => {
           </ThemeText>
         </View>
       </View>
-      <Icon name="chevron-right" size={24} color={theme.colors.text} />
+      {rightElement || <Icon name="chevron-right" size={24} color={theme.colors.text} />}
     </TouchableOpacity>
   );
 
