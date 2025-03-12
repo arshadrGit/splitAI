@@ -80,16 +80,32 @@ export const signIn = createAsyncThunk(
   }
 );
 
+export const updateProfile = createAsyncThunk(
+  'auth/updateProfile',
+  async ({ displayName }: { displayName: string }) => {
+    const currentUser = auth().currentUser;
+    if (!currentUser) {
+      throw new Error('No user logged in');
+    }
+
+    await currentUser.updateProfile({ displayName });
+    await firestore().collection('users').doc(currentUser.uid).update({
+      displayName,
+    });
+
+    return {
+      id: currentUser.uid,
+      email: currentUser.email || '',
+      displayName,
+    };
+  }
+);
+
 export const signOut = createAsyncThunk(
   'auth/signOut',
-  async (_, { rejectWithValue }) => {
-    try {
-      await auth().signOut();
-      return null;
-    } catch (error: any) {
-      console.error('Sign out error:', error);
-      return rejectWithValue(error.message || 'Failed to sign out');
-    }
+  async () => {
+    await auth().signOut();
+    return null;
   }
 );
 
@@ -144,14 +160,24 @@ const authSlice = createSlice({
         state.loading = false;
         state.error = action.error.message || 'Sign in failed';
       })
+      .addCase(updateProfile.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(updateProfile.fulfilled, (state, action) => {
+        state.loading = false;
+        if (state.user) {
+          state.user.displayName = action.payload.displayName;
+        }
+      })
+      .addCase(updateProfile.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.error.message || 'Failed to update profile';
+      })
       .addCase(signOut.fulfilled, (state) => {
         state.user = null;
         state.loading = false;
         state.error = null;
-      })
-      .addCase(signOut.rejected, (state, action) => {
-        state.loading = false;
-        state.error = action.payload as string;
       })
       .addCase(checkAuthState.pending, (state) => {
         state.loading = true;

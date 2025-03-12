@@ -10,7 +10,6 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 // Import screens
 import LoginScreen from '../screens/auth/LoginScreen';
 import SignupScreen from '../screens/auth/SignupScreen';
-import AccountScreen from '../screens/AccountScreen';
 import RecentActivityScreen from '../screens/RecentActivityScreen';
 import FriendsScreen from '../screens/FriendsScreen';
 import GroupsScreen from '../screens/GroupsScreen';
@@ -18,68 +17,115 @@ import GroupDetailScreen from '../screens/GroupDetailScreen';
 import GroupMembersScreen from '../screens/GroupMembersScreen';
 import SettleUpScreen from '../screens/SettleUpScreen';
 import AddExpenseScreen from '../screens/AddExpenseScreen';
+import SettingsScreen from '../screens/SettingsScreen';
+import EditProfileScreen from '../screens/EditProfileScreen';
+import HelpSupportScreen from '../screens/HelpSupportScreen';
+import PrivacyPolicyScreen from '../screens/PrivacyPolicyScreen';
+import AboutScreen from '../screens/AboutScreen';
 
-const Stack = createNativeStackNavigator();
+// Define navigation types
+type RootStackParamList = {
+  // Auth Stack
+  Login: undefined;
+  Signup: undefined;
+  
+  // Main Stack
+  MainTabs: undefined;
+  GroupMembers: { groupId: string };
+  GroupDetail: { groupId: string; groupName: string };
+  AddExpense: { groupId: string };
+  SettleUp: { groupId: string };
+  
+  // Tab Stacks
+  HomeMain: undefined;
+  GroupsMain: undefined;
+  FriendsMain: undefined;
+  ActivityMain: undefined;
+  SettingsMain: undefined;
+  EditProfile: undefined;
+  HelpSupport: undefined;
+  PrivacyPolicy: undefined;
+  About: undefined;
+};
+
+const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator();
+
+const GroupsStack = () => (
+  <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Screen name="GroupsMain" component={GroupsScreen} />
+    <Stack.Screen name="GroupDetail" component={GroupDetailScreen} />
+    <Stack.Screen name="AddExpense" component={AddExpenseScreen} />
+    <Stack.Screen name="SettleUp" component={SettleUpScreen} />
+  </Stack.Navigator>
+);
+
+const FriendsStack = () => (
+  <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Screen name="FriendsMain" component={FriendsScreen} />
+  </Stack.Navigator>
+);
+
+const ActivityStack = () => (
+  <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Screen name="ActivityMain" component={RecentActivityScreen} />
+  </Stack.Navigator>
+);
+
+const SettingsStack = () => (
+  <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Screen name="SettingsMain" component={SettingsScreen} />
+    <Stack.Screen name="EditProfile" component={EditProfileScreen} />
+    <Stack.Screen name="HelpSupport" component={HelpSupportScreen} />
+    <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} />
+    <Stack.Screen name="About" component={AboutScreen} />
+  </Stack.Navigator>
+);
 
 const MainTabs = () => {
   const { theme } = useTheme();
 
   return (
     <Tab.Navigator
-      screenOptions={{
-        headerStyle: {
-          backgroundColor: theme.colors.background,
+      screenOptions={({ route }) => ({
+        headerShown: false,
+        tabBarIcon: ({ focused, color, size }) => {
+          let iconName;
+
+          switch (route.name) {
+            case 'Home':
+              iconName = focused ? 'home' : 'home-outline';
+              break;
+            case 'Groups':
+              iconName = focused ? 'account-group' : 'account-group-outline';
+              break;
+            case 'Friends':
+              iconName = focused ? 'account-multiple' : 'account-multiple-outline';
+              break;
+            case 'Activity':
+              iconName = focused ? 'history' : 'history';
+              break;
+            case 'Settings':
+              iconName = focused ? 'cog' : 'cog-outline';
+              break;
+            default:
+              iconName = 'circle';
+          }
+
+          return <Icon name={iconName as string} size={size} color={color} />;
         },
-        headerTintColor: theme.colors.text,
         tabBarStyle: {
           backgroundColor: theme.colors.background,
           borderTopColor: theme.colors.border,
         },
         tabBarActiveTintColor: theme.colors.primary,
         tabBarInactiveTintColor: theme.colors.text,
-      }}
+      })}
     >
-      <Tab.Screen 
-        name="Recent" 
-        component={RecentActivityScreen} 
-        options={{
-          headerShown: false,
-          tabBarIcon: ({ color, size }) => (
-            <Icon name="history" color={color} size={size} />
-          ),
-        }}
-      />
-      <Tab.Screen 
-        name="Friends" 
-        component={FriendsScreen} 
-        options={{
-          headerShown: false,
-          tabBarIcon: ({ color, size }) => (
-            <Icon name="account-multiple" color={color} size={size} />
-          ),
-        }}
-      />
-      <Tab.Screen 
-        name="Groups" 
-        component={GroupsScreen} 
-        options={{
-          headerShown: false,
-          tabBarIcon: ({ color, size }) => (
-            <Icon name="account-group" color={color} size={size} />
-          ),
-        }}
-      />
-      <Tab.Screen 
-        name="Account" 
-        component={AccountScreen} 
-        options={{
-          headerShown: false,
-          tabBarIcon: ({ color, size }) => (
-            <Icon name="account-circle" color={color} size={size} />
-          ),
-        }}
-      />
+      <Tab.Screen name="Activity" component={ActivityStack} />
+      <Tab.Screen name="Friends" component={FriendsStack} />
+      <Tab.Screen name="Groups" component={GroupsStack} />
+      <Tab.Screen name="Settings" component={SettingsStack} />
     </Tab.Navigator>
   );
 };
@@ -121,19 +167,26 @@ export const AppNavigator = () => {
               options={{ headerShown: false }}
             />
             <Stack.Screen
-              name="GroupDetail"
-              component={GroupDetailScreen}
-              options={({ route }) => ({ 
-                headerShown: false,
-                title: route.params?.groupName || 'Group Details',
-                headerBackTitle: 'Back'
-              })}
-            />
-            <Stack.Screen
               name="GroupMembers"
               component={GroupMembersScreen}
               options={{ 
                 title: 'Group Members',
+                headerBackTitle: 'Back'
+              }}
+            />
+            <Stack.Screen
+              name="GroupDetail"
+              component={GroupDetailScreen}
+              options={{ 
+                title: 'Group Details',
+                headerBackTitle: 'Back'
+              }}
+            />
+            <Stack.Screen
+              name="AddExpense"
+              component={AddExpenseScreen}
+              options={{ 
+                title: 'Add Expense',
                 headerBackTitle: 'Back'
               }}
             />
@@ -143,13 +196,6 @@ export const AppNavigator = () => {
               options={{ 
                 title: 'Settle Up',
                 headerBackTitle: 'Back'
-              }}
-            />
-            <Stack.Screen
-              name="AddExpense"
-              component={AddExpenseScreen}
-              options={{ 
-                headerShown: false
               }}
             />
           </>
