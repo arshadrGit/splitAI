@@ -210,7 +210,7 @@ export const GroupsScreen = () => {
                           <Icon name="check" size={16} color="#FFFFFF" />
                         )}
                       </View>
-                      <ThemeText>{friend.friendId}</ThemeText>
+                      <ThemeText>{friend.email}</ThemeText>
                     </View>
                   </TouchableOpacity>
                 ))}
