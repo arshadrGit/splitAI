@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import auth from '@react-native-firebase/auth';
+import firestore from '@react-native-firebase/firestore';
 import { User } from '../types';
 
 interface AuthState {
@@ -19,8 +20,24 @@ const initialState: AuthState = {
 export const signUp = createAsyncThunk(
   'auth/signUp',
   async ({ email, password, displayName }: { email: string; password: string; displayName: string }) => {
+    // Create the user in Firebase Authentication
     const userCredential = await auth().createUserWithEmailAndPassword(email, password);
     await userCredential.user?.updateProfile({ displayName });
+    
+    // Create a corresponding document in the users collection
+    const userData = {
+      email: userCredential.user.email,
+      displayName: displayName,
+      photoURL: userCredential.user.photoURL,
+      createdAt: firestore.FieldValue.serverTimestamp(),
+    };
+    
+    // Use the auth UID as the document ID in Firestore
+    await firestore()
+      .collection('users')
+      .doc(userCredential.user.uid)
+      .set(userData);
+    
     return {
       id: userCredential.user.uid,
       email: userCredential.user.email!,
@@ -34,6 +51,26 @@ export const signIn = createAsyncThunk(
   'auth/signIn',
   async ({ email, password }: { email: string; password: string }) => {
     const userCredential = await auth().signInWithEmailAndPassword(email, password);
+    
+    // Check if user exists in Firestore, if not create it
+    const userDoc = await firestore()
+      .collection('users')
+      .doc(userCredential.user.uid)
+      .get();
+    
+    if (!userDoc.exists) {
+      // Create user document if it doesn't exist
+      await firestore()
+        .collection('users')
+        .doc(userCredential.user.uid)
+        .set({
+          email: userCredential.user.email,
+          displayName: userCredential.user.displayName,
+          photoURL: userCredential.user.photoURL,
+          createdAt: firestore.FieldValue.serverTimestamp(),
+        });
+    }
+    
     return {
       id: userCredential.user.uid,
       email: userCredential.user.email!,

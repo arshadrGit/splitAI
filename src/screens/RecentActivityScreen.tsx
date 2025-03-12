@@ -94,13 +94,6 @@ export const RecentActivityScreen = ({ navigation }: any) => {
           />
           <ThemeText variant="title" style={styles.emptyTitle}>No Recent Activity</ThemeText>
           <ThemeText style={styles.emptyText}>Your recent transactions will appear here</ThemeText>
-          <TouchableOpacity 
-            style={[styles.addButton, { backgroundColor: theme.colors.primary }]}
-            onPress={() => navigation.navigate('AddExpense')}
-          >
-            <Icon name="plus" size={24} color="#FFFFFF" />
-            <ThemeText style={styles.addButtonText}>Add an Expense</ThemeText>
-          </TouchableOpacity>
         </View>
       ) : (
         <FlatList
