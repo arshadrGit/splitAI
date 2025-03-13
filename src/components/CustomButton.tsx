@@ -18,6 +18,7 @@ interface ButtonProps {
   style?: ViewStyle;
   textStyle?: TextStyle;
   icon?: React.ReactNode;
+  size?: 'small' | 'medium' | 'large';
 }
 
 export const CustomButton: React.FC<ButtonProps> = ({
@@ -29,6 +30,7 @@ export const CustomButton: React.FC<ButtonProps> = ({
   style,
   textStyle,
   icon,
+  size = 'medium',
 }) => {
   const { theme } = useTheme();
   
@@ -67,6 +69,42 @@ export const CustomButton: React.FC<ButtonProps> = ({
     }
     return 'transparent';
   };
+
+  const getButtonHeight = () => {
+    switch (size) {
+      case 'small':
+        return 36;
+      case 'large':
+        return 56;
+      case 'medium':
+      default:
+        return 48;
+    }
+  };
+
+  const getButtonPadding = () => {
+    switch (size) {
+      case 'small':
+        return 12;
+      case 'large':
+        return 24;
+      case 'medium':
+      default:
+        return 20;
+    }
+  };
+
+  const getFontSize = () => {
+    switch (size) {
+      case 'small':
+        return 14;
+      case 'large':
+        return 18;
+      case 'medium':
+      default:
+        return 16;
+    }
+  };
   
   return (
     <TouchableOpacity
@@ -75,6 +113,8 @@ export const CustomButton: React.FC<ButtonProps> = ({
         { 
           backgroundColor: getBackgroundColor(),
           borderColor: getBorderColor(),
+          height: getButtonHeight(),
+          paddingHorizontal: getButtonPadding(),
         },
         style,
       ]}
@@ -83,13 +123,17 @@ export const CustomButton: React.FC<ButtonProps> = ({
       activeOpacity={0.7}
     >
       {loading ? (
-        <ActivityIndicator color={getTextColor()} size="small" />
+        <ActivityIndicator color={getTextColor()} size={size === 'small' ? 'small' : 'small'} />
       ) : (
         <>
           {icon}
           <Text style={[
             styles.text, 
-            { color: getTextColor() },
+            { 
+              color: getTextColor(),
+              fontSize: getFontSize(),
+              marginLeft: icon ? 8 : 0,
+            },
             textStyle
           ]}>
             {title}
@@ -102,17 +146,13 @@ export const CustomButton: React.FC<ButtonProps> = ({
 
 const styles = StyleSheet.create({
   button: {
-    height: 50,
     borderRadius: 25,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 20,
     flexDirection: 'row',
     borderWidth: 1,
   },
   text: {
-    fontSize: 16,
     fontWeight: '600',
-    marginLeft: 8,
   },
 }); 

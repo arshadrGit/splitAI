@@ -3,6 +3,8 @@ export interface User {
   email: string;
   displayName: string;
   photoURL: string | null;
+  friends: string[];
+  groups: string[];
 }
 
 export interface Friend {
@@ -22,6 +24,8 @@ export interface Group {
   createdBy: string;
   createdAt: Date;
   totalExpenses: number;
+  balances: Balance[];
+  simplifiedDebts: Debt[];
 }
 
 export interface ExpenseSplit {
@@ -29,16 +33,25 @@ export interface ExpenseSplit {
   amount: number;
 }
 
+export type SplitType = 'EQUAL' | 'EXACT' | 'PERCENTAGE';
+
+export interface Split {
+  userId: string;
+  amount: number;
+  percentage?: number;
+}
+
 export interface Expense {
   id: string;
-  groupId: string;
   description: string;
   amount: number;
   paidBy: string;
-  date: Date;
-  splits: ExpenseSplit[];
-  createdBy: string;
+  groupId?: string;
+  splitType: SplitType;
+  splits: Split[];
+  participants: string[];
   createdAt: Date;
+  category?: string;
 }
 
 export interface Payment {
@@ -84,4 +97,15 @@ export interface Theme {
     placeholder: string;
     disabled: string;
   };
+}
+
+export interface Balance {
+  userId: string;
+  amount: number;
+}
+
+export interface Debt {
+  from: string;
+  to: string;
+  amount: number;
 } 

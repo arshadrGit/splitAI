@@ -1,7 +1,8 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import firestore from '@react-native-firebase/firestore';
-import { Expense, ExpenseSplit } from '../types';
+import { Expense, ExpenseSplit, Split, SplitType } from '../types';
 import { collection, addDoc, serverTimestamp } from '@firebase/firestore';
+import { calculateSplitAmounts, calculateBalances, simplifyDebts } from '../utils/debtSimplification';
 
 interface ExpensesState {
   expenses: Expense[];
@@ -25,50 +26,101 @@ export const fetchExpenses = createAsyncThunk(
       .orderBy('date', 'desc')
       .get();
     
-    return expensesSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      date: doc.data().date.toDate(),
-      createdAt: doc.data().createdAt.toDate(),
-    } as Expense));
+    return expensesSnapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        description: data.description,
+        amount: data.amount,
+        paidBy: data.paidBy,
+        groupId: data.groupId,
+        splitType: data.splitType,
+        splits: data.splits,
+        participants: data.participants,
+        date: data.date?.toDate(),
+        createdAt: data.createdAt?.toDate(),
+        category: data.category
+      } as Expense;
+    });
   }
 );
+
+interface AddExpenseParams {
+  description: string;
+  amount: number;
+  paidBy: string;
+  groupId?: string | null;
+  splitType: SplitType;
+  participants: string[];
+  splits: Split[];
+}
 
 // Add a new expense
 export const addExpense = createAsyncThunk(
   'expenses/addExpense',
-  async (expense: Omit<Expense, 'id'>) => {
+  async (params: AddExpenseParams) => {
+    const expenseData: Omit<Expense, 'id'> = {
+      description: params.description,
+      amount: params.amount,
+      paidBy: params.paidBy,
+      groupId: params.groupId || undefined,
+      splitType: params.splitType,
+      splits: params.splits,
+      participants: params.participants,
+      createdAt: new Date(),
+    };
+
     const db = firestore();
-    const expensesCollection = db.collection('expenses');
-    
-    // Add the expense
-    const docRef = await expensesCollection.add({
-      ...expense,
-      date: firestore.Timestamp.fromDate(expense.date),
-      createdAt: firestore.Timestamp.fromDate(expense.createdAt),
-    });
-    
-    // Update group total
-    const groupRef = db.collection('groups').doc(expense.groupId);
-    await db.runTransaction(async (transaction) => {
-      const groupDoc = await transaction.get(groupRef);
-      if (!groupDoc.exists) {
-        throw new Error('Group not found');
+    const batch = db.batch();
+
+    // Create expense document
+    const expenseRef = db.collection('expenses').doc();
+    batch.set(expenseRef, expenseData);
+
+    // Update group balances if it's a group expense
+    if (params.groupId) {
+      const groupRef = db.collection('groups').doc(params.groupId);
+      const groupDoc = await groupRef.get();
+      const groupData = groupDoc.data();
+
+      if (groupData) {
+        // Get all group expenses including the new one
+        const expensesSnapshot = await db
+          .collection('expenses')
+          .where('groupId', '==', params.groupId)
+          .get();
+
+        const allExpenses = [
+          ...expensesSnapshot.docs.map(doc => ({ 
+            id: doc.id, 
+            ...doc.data(),
+            createdAt: doc.data().createdAt?.toDate(),
+          } as Expense)),
+          { id: expenseRef.id, ...expenseData }
+        ];
+
+        // Calculate new balances
+        const balances = calculateBalances(allExpenses, params.participants);
+        const simplifiedDebts = simplifyDebts(balances);
+
+        // Update group with new balances and total
+        batch.update(groupRef, {
+          balances: balances.map(b => ({
+            userId: b.userId,
+            amount: Number(b.amount.toFixed(2))
+          })),
+          simplifiedDebts: simplifiedDebts.map(d => ({
+            from: d.from,
+            to: d.to,
+            amount: Number(d.amount.toFixed(2))
+          })),
+          totalExpenses: firestore.FieldValue.increment(params.amount)
+        });
       }
-      
-      const currentTotal = groupDoc.data()?.totalExpenses || 0;
-      transaction.update(groupRef, {
-        totalExpenses: currentTotal + expense.amount
-      });
-    });
-    
-    const newExpense = await docRef.get();
-    return {
-      id: newExpense.id,
-      ...newExpense.data(),
-      date: newExpense.data()?.date.toDate(),
-      createdAt: newExpense.data()?.createdAt.toDate(),
-    } as Expense;
+    }
+
+    await batch.commit();
+    return { id: expenseRef.id, ...expenseData } as Expense;
   }
 );
 
@@ -111,65 +163,65 @@ export const deleteExpense = createAsyncThunk(
   }
 );
 
-// Calculate balances for a group
-export const calculateBalances = createAsyncThunk(
-  'expenses/calculateBalances',
-  async (groupId: string) => {
-    const db = firestore();
-    const balances: { [key: string]: number } = {};
+// // Calculate balances for a group
+// export const calculateBalances = createAsyncThunk(
+//   'expenses/calculateBalances',
+//   async (groupId: string) => {
+//     const db = firestore();
+//     const balances: { [key: string]: number } = {};
 
-    // Get all expenses for the group
-    const expensesSnapshot = await db
-      .collection('expenses')
-      .where('groupId', '==', groupId)
-      .orderBy('date', 'desc')
-      .get();
+//     // Get all expenses for the group
+//     const expensesSnapshot = await db
+//       .collection('expenses')
+//       .where('groupId', '==', groupId)
+//       .orderBy('date', 'desc')
+//       .get();
 
-    // First pass: Calculate raw balances from expenses
-    expensesSnapshot.docs.forEach(doc => {
-      const expense = doc.data();
-      if (expense.type === 'payment') return; // Skip payment records in first pass
+//     // First pass: Calculate raw balances from expenses
+//     expensesSnapshot.docs.forEach(doc => {
+//       const expense = doc.data();
+//       if (expense.type === 'payment') return; // Skip payment records in first pass
       
-      const paidBy = expense.paidBy;
-      const splits = expense.splits as ExpenseSplit[];
+//       const paidBy = expense.paidBy;
+//       const splits = expense.splits as ExpenseSplit[];
       
-      // Add the full amount to the payer's balance (positive means they are owed money)
-      balances[paidBy] = (balances[paidBy] || 0) + expense.amount;
+//       // Add the full amount to the payer's balance (positive means they are owed money)
+//       balances[paidBy] = (balances[paidBy] || 0) + expense.amount;
       
-      // Subtract each person's share from their balance
-      splits.forEach(split => {
-        balances[split.userId] = (balances[split.userId] || 0) - split.amount;
-      });
-    });
+//       // Subtract each person's share from their balance
+//       splits.forEach(split => {
+//         balances[split.userId] = (balances[split.userId] || 0) - split.amount;
+//       });
+//     });
 
-    try {
-      // Get all completed payments
-      const paymentsSnapshot = await db
-        .collection('payments')
-        .where('groupId', '==', groupId)
-        .get();
+//     try {
+//       // Get all completed payments
+//       const paymentsSnapshot = await db
+//         .collection('payments')
+//         .where('groupId', '==', groupId)
+//         .get();
 
-      // Second pass: Apply payments to adjust balances
-      paymentsSnapshot.docs.forEach(doc => {
-        const payment = doc.data();
-        // When someone pays, their balance increases (they owe less)
-        balances[payment.payerId] = (balances[payment.payerId] || 0) + payment.amount;
-        // The person receiving the payment has their balance decrease (they are owed less)
-        balances[payment.payeeId] = (balances[payment.payeeId] || 0) - payment.amount;
-      });
-    } catch (error) {
-      // If payments collection doesn't exist yet, just continue with expense-based balances
-      console.log('No payments collection yet:', error);
-    }
+//       // Second pass: Apply payments to adjust balances
+//       paymentsSnapshot.docs.forEach(doc => {
+//         const payment = doc.data();
+//         // When someone pays, their balance increases (they owe less)
+//         balances[payment.payerId] = (balances[payment.payerId] || 0) + payment.amount;
+//         // The person receiving the payment has their balance decrease (they are owed less)
+//         balances[payment.payeeId] = (balances[payment.payeeId] || 0) - payment.amount;
+//       });
+//     } catch (error) {
+//       // If payments collection doesn't exist yet, just continue with expense-based balances
+//       console.log('No payments collection yet:', error);
+//     }
 
-    return balances;
-  }
-);
+//     return balances;
+//   }
+// );
 
 // Record a payment between users
 export const recordPayment = createAsyncThunk(
   'expenses/recordPayment',
-  async ({ groupId, payerId, payeeId, amount }: { groupId: string; payerId: string; payeeId: string; amount: number }, { dispatch }) => {
+  async ({ groupId, payerId, payeeId, amount }: { groupId: string; payerId: string; payeeId: string; amount: number }) => {
     try {
       const db = firestore();
       
@@ -213,13 +265,43 @@ export const recordPayment = createAsyncThunk(
       // Commit both operations
       await batch.commit();
 
-      // After recording the payment, recalculate balances
-      const balances = await dispatch(calculateBalances(groupId)).unwrap();
-      return balances;
+      return { success: true };
     } catch (error) {
       console.error('Error recording payment:', error);
       throw error;
     }
+  }
+);
+
+export const fetchGroupExpenses = createAsyncThunk(
+  'expenses/fetchGroupExpenses',
+  async (groupId: string) => {
+    const snapshot = await firestore()
+      .collection('expenses')
+      .where('groupId', '==', groupId)
+      .orderBy('createdAt', 'desc')
+      .get();
+
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    })) as Expense[];
+  }
+);
+
+export const fetchUserExpenses = createAsyncThunk(
+  'expenses/fetchUserExpenses',
+  async (userId: string) => {
+    const snapshot = await firestore()
+      .collection('expenses')
+      .where('participants', 'array-contains', userId)
+      .orderBy('createdAt', 'desc')
+      .get();
+
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    })) as Expense[];
   }
 );
 
@@ -266,6 +348,30 @@ const expensesSlice = createSlice({
       .addCase(recordPayment.rejected, (state, action) => {
         state.loading = false;
         state.error = action.error.message || 'Failed to record payment';
+      })
+      .addCase(fetchGroupExpenses.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(fetchGroupExpenses.fulfilled, (state, action) => {
+        state.loading = false;
+        state.expenses = action.payload;
+      })
+      .addCase(fetchGroupExpenses.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.error.message || 'Failed to fetch expenses';
+      })
+      .addCase(fetchUserExpenses.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(fetchUserExpenses.fulfilled, (state, action) => {
+        state.loading = false;
+        state.expenses = action.payload;
+      })
+      .addCase(fetchUserExpenses.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.error.message || 'Failed to fetch expenses';
       });
   },
 });

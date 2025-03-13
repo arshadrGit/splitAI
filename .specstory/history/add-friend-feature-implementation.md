@@ -6843,6 +6843,5131 @@ I'll help you add the dark theme toggle and fix the recent activity display. Fir
 _**Assistant**_
 
 ```
+import React from 'react';
+import { View, StyleSheet, ScrollView, TouchableOpacity, Alert, Switch } from 'react-native';
+import { useDispatch, useSelector } from 'react-redux';
+import { RootState, AppDispatch } from '../redux/store';
+import { useTheme } from '../themes/ThemeProvider';
+import { ThemeText } from '../components/ThemeText';
+import { Header } from '../components/Header';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { signOut } from '../redux/authSlice';
+
+export const SettingsScreen = ({ navigation }: any) => {
+  const dispatch = useDispatch<AppDispatch>();
+  const { theme, isDark, toggleTheme } = useTheme();
+  const user = useSelector((state: RootState) => state.auth.user);
+
+  const settingsOptions = [
+    {
+      title: 'Profile',
+      icon: 'account',
+      onPress: () => navigation.navigate('EditProfile'),
+      description: 'Edit your profile information'
+    },
+    {
+      title: 'Dark Theme',
+      icon: isDark ? 'weather-night' : 'white-balance-sunny',
+      onPress: toggleTheme,
+      description: 'Toggle dark/light theme',
+      rightElement: (
+        <Switch
+          value={isDark}
+          onValueChange={toggleTheme}
+          trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
+          thumbColor={isDark ? theme.colors.card : '#f4f3f4'}
+        />
+      )
+    },
+    {
+      title: 'Privacy Policy',
+      icon: 'shield-check',
+      onPress: () => navigation.navigate('PrivacyPolicy'),
+      description: 'View our privacy policy'
+    },
+    {
+      title: 'Help & Support',
+      icon: 'help-circle',
+      onPress: () => navigation.navigate('HelpSupport'),
+      description: 'Get help and contact support'
+    },
+    {
+      title: 'About',
+      icon: 'information',
+      onPress: () => navigation.navigate('About'),
+      description: 'Learn more about SplitEase'
+    },
+    {
+      title: 'Sign Out',
+      icon: 'logout',
+      onPress: () => {
+        Alert.alert(
+          'Sign Out',
+          'Are you sure you want to sign out?',
+          [
+            {
+              text: 'Cancel',
+              style: 'cancel'
+            },
+            {
+              text: 'Sign Out',
+              style: 'destructive',
+              onPress: () => dispatch(signOut())
+            }
+          ]
+        );
+      },
+      description: 'Sign out of your account'
+    }
+  ];
+
+  const renderSettingItem = ({ title, icon, onPress, description, rightElement }: any) => (
+    <TouchableOpacity
+      key={title}
+      style={[styles.settingItem, { borderBottomColor: theme.colors.border }]}
+      onPress={onPress}
+    >
+      <View style={styles.settingLeft}>
+        <View style={[styles.iconContainer, { backgroundColor: theme.colors.primary }]}>
+          <Icon name={icon} size={24} color="#FFFFFF" />
+        </View>
+        <View style={styles.settingInfo}>
+          <ThemeText variant="title" style={styles.settingTitle}>
+            {title}
+          </ThemeText>
+          <ThemeText variant="caption" style={styles.settingDescription}>
+            {description}
+          </ThemeText>
+        </View>
+      </View>
+      {rightElement || <Icon name="chevron-right" size={24} color={theme.colors.text} />}
+    </TouchableOpacity>
+  );
+
+  return (
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <Header title="Settings" />
+      
+      <ScrollView contentContainerStyle={styles.content}>
+        <View style={[styles.profileCard, { backgroundColor: theme.colors.card }]}>
+          <View style={styles.profileInfo}>
+            <View style={[styles.avatar, { backgroundColor: theme.colors.primary }]}>
+              <ThemeText style={styles.avatarText}>
+                {user?.displayName?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase()}
+              </ThemeText>
+            </View>
+            <View>
+              <ThemeText variant="title" style={styles.name}>
+                {user?.displayName || 'User'}
+              </ThemeText>
+              <ThemeText variant="caption" style={styles.email}>
+                {user?.email}
+              </ThemeText>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.settingsList}>
+          {settingsOptions.map(renderSettingItem)}
+        </View>
+      </ScrollView>
+    </View>
+  );
+};
+```
+
+---
+
+_**Assistant**_
+
+Now let's fix the Recent Activity screen to properly display group expenses. We need to update the `fetchActivities` function in the activity slice:
+
+---
+
+_**Assistant**_
+
+```
+import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import firestore from '@react-native-firebase/firestore';
+
+interface ActivityItem {
+  id: string;
+  type: 'expense' | 'payment' | 'settlement';
+  description: string;
+  amount: number;
+  groupId?: string;
+  groupName?: string;
+  userId: string;
+  paidBy: string;
+  paidTo?: string;
+  createdAt: Date;
+  isGroupActivity: boolean;
+  balance: number;
+}
+
+interface ActivityState {
+  activities: ActivityItem[];
+  loading: boolean;
+  error: string | null;
+}
+
+const initialState: ActivityState = {
+  activities: [],
+  loading: false,
+  error: null,
+};
+
+export const fetchActivities = createAsyncThunk(
+  'activity/fetchActivities',
+  async (userId: string) => {
+    const db = firestore();
+    const activities: ActivityItem[] = [];
+
+    // Fetch all expenses where the user is involved (either paid or part of splits)
+    const expensesSnapshot = await db
+      .collection('expenses')
+      .where('participants', 'array-contains', userId)
+      .orderBy('createdAt', 'desc')
+      .get();
+
+    // Fetch all payments where user is either payer or payee
+    let paymentsSnapshot;
+    try {
+      paymentsSnapshot = await db
+        .collection('payments')
+        .where('participants', 'array-contains', userId)
+        .orderBy('createdAt', 'desc')
+        .get();
+    } catch (error) {
+      console.log('No payments yet:', error);
+      paymentsSnapshot = { docs: [] };
+    }
+
+    // Process expenses
+    for (const doc of expensesSnapshot.docs) {
+      const expense = doc.data();
+      const groupDoc = expense.groupId ? await db.collection('groups').doc(expense.groupId).get() : null;
+      const paidByUser = expense.paidBy === userId;
+      const userSplit = expense.splits.find((split: any) => split.userId === userId);
+      
+      if (userSplit) {
+        let balance = 0;
+        if (paidByUser) {
+          // If user paid, they are owed the total amount minus their share
+          balance = expense.amount - userSplit.amount;
+        } else {
+          // If user didn't pay, they owe their share
+          balance = -userSplit.amount;
+        }
+
+        // Get payer's display name
+        const payerDoc = await db.collection('users').doc(expense.paidBy).get();
+        const payerName = payerDoc.data()?.displayName || 'Unknown User';
+
+        activities.push({
+          id: doc.id,
+          type: 'expense',
+          description: expense.description,
+          amount: expense.amount,
+          groupId: expense.groupId,
+          groupName: groupDoc?.data()?.name,
+          userId: userId,
+          paidBy: paidByUser ? 'You' : payerName,
+          createdAt: expense.createdAt.toDate(),
+          isGroupActivity: !!expense.groupId,
+          balance: balance
+        });
+      }
+    }
+
+    // Process payments
+    for (const doc of paymentsSnapshot.docs) {
+      const payment = doc.data();
+      const groupDoc = payment.groupId ? await db.collection('groups').doc(payment.groupId).get() : null;
+      const isPayer = payment.payerId === userId;
+      
+      // Get the other party's name
+      const otherPartyId = isPayer ? payment.payeeId : payment.payerId;
+      const otherPartyDoc = await db.collection('users').doc(otherPartyId).get();
+      const otherPartyName = otherPartyDoc.data()?.displayName || 'Unknown User';
+
+      activities.push({
+        id: doc.id,
+        type: 'payment',
+        description: 'Payment Settlement',
+        amount: payment.amount,
+        groupId: payment.groupId,
+        groupName: groupDoc?.data()?.name,
+        userId: userId,
+        paidBy: isPayer ? 'You' : otherPartyName,
+        paidTo: isPayer ? otherPartyName : 'You',
+        createdAt: payment.createdAt.toDate(),
+        isGroupActivity: !!payment.groupId,
+        balance: isPayer ? -payment.amount : payment.amount
+      });
+    }
+
+    // Sort all activities by date
+    activities.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+    return activities;
+  }
+);
+
+const activitySlice = createSlice({
+  name: 'activity',
+  initialState,
+  reducers: {},
+  extraReducers: (builder) => {
+    builder
+      .addCase(fetchActivities.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(fetchActivities.fulfilled, (state, action) => {
+        state.loading = false;
+        state.activities = action.payload;
+      })
+      .addCase(fetchActivities.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.error.message || 'Failed to fetch activities';
+      });
+  },
+});
+
+export default activitySlice.reducer;
+```
+
+---
+
+_**Assistant**_
+
+I've made the following changes:
+
+1. Added Dark Theme Toggle:
+   - Added a new setting option with a Switch component
+   - Uses the `isDark` and `toggleTheme` from the theme provider
+   - Added a dynamic icon that changes between sun and moon based on the theme
+   - The switch track color changes based on the theme
+
+2. Fixed Recent Activity Display:
+   - Updated the query to fetch all expenses where the user is involved using `participants` array
+   - Improved balance calculation:
+     - If user paid: balance = total amount - user's share (positive)
+     - If user didn't pay: balance = -user's share (negative)
+   - Added user display names instead of IDs
+   - Fixed payment display to show "You" and the other party's name
+   - Improved the query for payments to show both sent and received payments
+   - Added proper group information to activities
+
+To make this work properly, make sure that when creating expenses and payments, you're:
+1. Adding all participants to the `participants` array in both expenses and payments
+2. Setting the proper `paidBy` and `payeeId` fields
+3. Including the correct group information when the activity is group-related
+
+The Recent Activity screen should now show:
+- All expenses you've paid for
+- All expenses where you're included in splits
+- All payments you've made or received
+- Proper balance calculations
+- User-friendly names instead of IDs
+- Group context when applicable
+
+---
+
+_**User**_
+
+Add a Splitwise-like expense tracking and debt simplification feature to my existing app. The feature should include:
+
+1. **Group Expenses Workflow:**
+   - Allow users to create a group (e.g., "Road Trip") with multiple members (e.g., Alice, Bob, Charlie).
+   - Enable adding expenses to the group, specifying the payer and splitting the cost equally among members.
+   - Calculate and display simplified debts between members (e.g., B owes A $10, C owes A $30, C owes B $20) based on multiple expenses.
+   - Example scenario: Alice pays $90 for gas (split equally), Bob pays $60 for food (split equally), simplify debts accordingly.
+
+2. **Individual Expense Workflow:**
+   - Allow a user to add a one-off expense with a selected friend (e.g., Alice pays $50 for movie tickets for herself and Bob, split equally).
+   - Show the debt (e.g., Bob owes Alice $25) and allow settlement notifications.
+
+Note: Split type option: split equally split exactly equally and percentage
+
+---
+
+_**Assistant**_
+
+I'll help you implement the Splitwise-like expense tracking system with debt simplification. Let's break this down into steps:
+
+1. First, let's update the expense model to support different split types:
+
+---
+
+_**Assistant**_
+
+```
+export type SplitType = 'EQUAL' | 'EXACT' | 'PERCENTAGE';
+
+export interface Split {
+  userId: string;
+  amount: number;
+  percentage?: number;
+}
+
+export interface Expense {
+  id: string;
+  description: string;
+  amount: number;
+  paidBy: string;
+  groupId?: string;
+  splitType: SplitType;
+  splits: Split[];
+  participants: string[];
+  createdAt: Date;
+  category?: string;
+}
+
+export interface Balance {
+  userId: string;
+  amount: number;
+}
+
+export interface Debt {
+  from: string;
+  to: string;
+  amount: number;
+}
+
+export interface Group {
+  id: string;
+  name: string;
+  members: string[];
+  createdBy: string;
+  createdAt: Date;
+  balances: Balance[];
+  simplifiedDebts: Debt[];
+}
+
+export interface User {
+  id: string;
+  email: string;
+  displayName: string;
+  friends: string[];
+  groups: string[];
+}
+
+// ... existing types ...
+```
+
+---
+
+_**Assistant**_
+
+Now, let's create a utility function to handle debt simplification:
+
+---
+
+_**Assistant**_
+
+```
+import { Balance, Debt } from '../types';
+
+interface DebtGraph {
+  [key: string]: { [key: string]: number };
+}
+
+export function simplifyDebts(balances: Balance[]): Debt[] {
+  // Create a graph of all debts
+  const debtGraph: DebtGraph = {};
+  
+  // Initialize the graph
+  balances.forEach(balance => {
+    debtGraph[balance.userId] = {};
+    balances.forEach(other => {
+      if (balance.userId !== other.userId) {
+        debtGraph[balance.userId][other.userId] = 0;
+      }
+    });
+  });
+
+  // Find users who owe money (negative balance) and users who are owed money (positive balance)
+  const debtors = balances.filter(b => b.amount < 0).sort((a, b) => a.amount - b.amount);
+  const creditors = balances.filter(b => b.amount > 0).sort((a, b) => b.amount - a.amount);
+
+  // Match debtors with creditors to minimize transactions
+  let debtorIndex = 0;
+  let creditorIndex = 0;
+
+  while (debtorIndex < debtors.length && creditorIndex < creditors.length) {
+    const debtor = debtors[debtorIndex];
+    const creditor = creditors[creditorIndex];
+    
+    const debtAmount = Math.abs(debtor.amount);
+    const creditAmount = creditor.amount;
+    
+    const transferAmount = Math.min(debtAmount, creditAmount);
+    
+    // Record the debt in the graph
+    debtGraph[debtor.userId][creditor.userId] = transferAmount;
+    
+    // Update remaining amounts
+    debtor.amount += transferAmount;
+    creditor.amount -= transferAmount;
+    
+    // Move to next debtor/creditor if their balance is settled
+    if (Math.abs(debtor.amount) < 0.01) debtorIndex++;
+    if (Math.abs(creditor.amount) < 0.01) creditorIndex++;
+  }
+
+  // Convert the graph to a list of debts
+  const simplifiedDebts: Debt[] = [];
+  Object.keys(debtGraph).forEach(from => {
+    Object.keys(debtGraph[from]).forEach(to => {
+      const amount = debtGraph[from][to];
+      if (amount > 0) {
+        simplifiedDebts.push({ from, to, amount });
+      }
+    });
+  });
+
+  return simplifiedDebts;
+}
+
+export function calculateBalances(expenses: any[], participants: string[]): Balance[] {
+  const balances: { [key: string]: number } = {};
+  
+  // Initialize balances for all participants
+  participants.forEach(userId => {
+    balances[userId] = 0;
+  });
+
+  // Process each expense
+  expenses.forEach(expense => {
+    const paidBy = expense.paidBy;
+    balances[paidBy] += expense.amount; // Add full amount to payer
+
+    // Process splits based on split type
+    expense.splits.forEach((split: any) => {
+      balances[split.userId] -= split.amount; // Subtract split amount from each participant
+    });
+  });
+
+  // Convert balances object to array
+  return Object.entries(balances).map(([userId, amount]) => ({
+    userId,
+    amount: Number(amount.toFixed(2)) // Round to 2 decimal places
+  }));
+}
+
+export function calculateSplitAmounts(
+  totalAmount: number,
+  splitType: string,
+  participants: string[],
+  customSplits?: { [key: string]: number }
+): Split[] {
+  switch (splitType) {
+    case 'EQUAL':
+      const equalShare = totalAmount / participants.length;
+      return participants.map(userId => ({
+        userId,
+        amount: Number(equalShare.toFixed(2))
+      }));
+
+    case 'EXACT':
+      if (!customSplits) throw new Error('Custom splits required for EXACT split type');
+      return participants.map(userId => ({
+        userId,
+        amount: Number(customSplits[userId].toFixed(2))
+      }));
+
+    case 'PERCENTAGE':
+      if (!customSplits) throw new Error('Custom splits required for PERCENTAGE split type');
+      return participants.map(userId => ({
+        userId,
+        amount: Number((totalAmount * (customSplits[userId] / 100)).toFixed(2)),
+        percentage: customSplits[userId]
+      }));
+
+    default:
+      throw new Error('Invalid split type');
+  }
+}
+```
+
+---
+
+_**Assistant**_
+
+Let me fix the linter error by importing the Split type:
+
+---
+
+_**Assistant**_
+
+```
+import { Balance, Debt, Split } from '../types';
+
+// ... rest of the code ...
+```
+
+---
+
+_**Assistant**_
+
+Now let's update the expense slice to handle the new split types and debt calculations:
+
+---
+
+_**Assistant**_
+
+```
+import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import firestore from '@react-native-firebase/firestore';
+import { Expense, Split, SplitType } from '../types';
+import { calculateSplitAmounts, calculateBalances, simplifyDebts } from '../utils/debtSimplification';
+
+interface ExpensesState {
+  expenses: Expense[];
+  loading: boolean;
+  error: string | null;
+}
+
+const initialState: ExpensesState = {
+  expenses: [],
+  loading: false,
+  error: null,
+};
+
+export const addExpense = createAsyncThunk(
+  'expenses/addExpense',
+  async ({
+    description,
+    amount,
+    paidBy,
+    groupId,
+    splitType,
+    participants,
+    customSplits
+  }: {
+    description: string;
+    amount: number;
+    paidBy: string;
+    groupId?: string;
+    splitType: SplitType;
+    participants: string[];
+    customSplits?: { [key: string]: number };
+  }) => {
+    const db = firestore();
+    const batch = db.batch();
+
+    // Calculate splits based on split type
+    const splits = calculateSplitAmounts(amount, splitType, participants, customSplits);
+
+    // Create expense document
+    const expenseRef = db.collection('expenses').doc();
+    const expenseData: Expense = {
+      id: expenseRef.id,
+      description,
+      amount,
+      paidBy,
+      groupId,
+      splitType,
+      splits,
+      participants,
+      createdAt: new Date(),
+    };
+    batch.set(expenseRef, expenseData);
+
+    // Update group balances if it's a group expense
+    if (groupId) {
+      const groupRef = db.collection('groups').doc(groupId);
+      const groupDoc = await groupRef.get();
+      const groupData = groupDoc.data();
+
+      if (groupData) {
+        // Get all group expenses
+        const expensesSnapshot = await db
+          .collection('expenses')
+          .where('groupId', '==', groupId)
+          .get();
+
+        const allExpenses = [...expensesSnapshot.docs.map(doc => doc.data()), expenseData];
+        const balances = calculateBalances(allExpenses, groupData.members);
+        const simplifiedDebts = simplifyDebts(balances);
+
+        batch.update(groupRef, {
+          balances,
+          simplifiedDebts,
+          totalExpenses: firestore.FieldValue.increment(amount)
+        });
+      }
+    }
+
+    await batch.commit();
+    return expenseData;
+  }
+);
+
+export const fetchGroupExpenses = createAsyncThunk(
+  'expenses/fetchGroupExpenses',
+  async (groupId: string) => {
+    const snapshot = await firestore()
+      .collection('expenses')
+      .where('groupId', '==', groupId)
+      .orderBy('createdAt', 'desc')
+      .get();
+
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    })) as Expense[];
+  }
+);
+
+export const fetchUserExpenses = createAsyncThunk(
+  'expenses/fetchUserExpenses',
+  async (userId: string) => {
+    const snapshot = await firestore()
+      .collection('expenses')
+      .where('participants', 'array-contains', userId)
+      .orderBy('createdAt', 'desc')
+      .get();
+
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    })) as Expense[];
+  }
+);
+
+const expensesSlice = createSlice({
+  name: 'expenses',
+  initialState,
+  reducers: {},
+  extraReducers: (builder) => {
+    builder
+      .addCase(addExpense.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(addExpense.fulfilled, (state, action) => {
+        state.loading = false;
+        state.expenses.unshift(action.payload);
+      })
+      .addCase(addExpense.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.error.message || 'Failed to add expense';
+      })
+      .addCase(fetchGroupExpenses.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(fetchGroupExpenses.fulfilled, (state, action) => {
+        state.loading = false;
+        state.expenses = action.payload;
+      })
+      .addCase(fetchGroupExpenses.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.error.message || 'Failed to fetch expenses';
+      })
+      .addCase(fetchUserExpenses.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(fetchUserExpenses.fulfilled, (state, action) => {
+        state.loading = false;
+        state.expenses = action.payload;
+      })
+      .addCase(fetchUserExpenses.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.error.message || 'Failed to fetch expenses';
+      });
+  },
+});
+
+export default expensesSlice.reducer;
+```
+
+---
+
+_**Assistant**_
+
+Let me fix the linter errors in the expenses slice:
+
+---
+
+_**Assistant**_
+
+```
+import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import firestore from '@react-native-firebase/firestore';
+import { Expense, Split, SplitType } from '../types';
+import { calculateSplitAmounts, calculateBalances, simplifyDebts } from '../utils/debtSimplification';
+
+interface ExpensesState {
+  expenses: Expense[];
+  loading: boolean;
+  error: string | null;
+}
+
+const initialState: ExpensesState = {
+  expenses: [],
+  loading: false,
+  error: null,
+};
+
+interface AddExpenseParams {
+  description: string;
+  amount: number;
+  paidBy: string;
+  groupId?: string;
+  splitType: SplitType;
+  participants: string[];
+  customSplits?: { [key: string]: number };
+}
+
+export const addExpense = createAsyncThunk(
+  'expenses/addExpense',
+  async ({
+    description,
+    amount,
+    paidBy,
+    groupId,
+    splitType,
+    participants,
+    customSplits
+  }: AddExpenseParams) => {
+    const db = firestore();
+    const batch = db.batch();
+
+    // Calculate splits based on split type
+    const splits = calculateSplitAmounts(amount, splitType, participants, customSplits);
+
+    // Create expense document
+    const expenseRef = db.collection('expenses').doc();
+    const expenseData: Omit<Expense, 'id'> = {
+      description,
+      amount,
+      paidBy,
+      groupId: groupId || null,
+      splitType,
+      splits,
+      participants,
+      createdAt: new Date(),
+    };
+    batch.set(expenseRef, expenseData);
+
+    // Update group balances if it's a group expense
+    if (groupId) {
+      const groupRef = db.collection('groups').doc(groupId);
+      const groupDoc = await groupRef.get();
+      const groupData = groupDoc.data();
+
+      if (groupData) {
+        // Get all group expenses
+        const expensesSnapshot = await db
+          .collection('expenses')
+          .where('groupId', '==', groupId)
+          .get();
+
+        const allExpenses = [
+          ...expensesSnapshot.docs.map(doc => ({ 
+            id: doc.id, 
+            ...doc.data() 
+          } as Expense)),
+          { id: expenseRef.id, ...expenseData }
+        ];
+        
+        const balances = calculateBalances(allExpenses, groupData.members);
+        const simplifiedDebts = simplifyDebts(balances);
+
+        batch.update(groupRef, {
+          balances,
+          simplifiedDebts,
+          totalExpenses: firestore.FieldValue.increment(amount)
+        });
+      }
+    }
+
+    await batch.commit();
+    return { id: expenseRef.id, ...expenseData } as Expense;
+  }
+);
+
+export const fetchGroupExpenses = createAsyncThunk(
+  'expenses/fetchGroupExpenses',
+  async (groupId: string) => {
+    const snapshot = await firestore()
+      .collection('expenses')
+      .where('groupId', '==', groupId)
+      .orderBy('createdAt', 'desc')
+      .get();
+
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    })) as Expense[];
+  }
+);
+
+export const fetchUserExpenses = createAsyncThunk(
+  'expenses/fetchUserExpenses',
+  async (userId: string) => {
+    const snapshot = await firestore()
+      .collection('expenses')
+      .where('participants', 'array-contains', userId)
+      .orderBy('createdAt', 'desc')
+      .get();
+
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    })) as Expense[];
+  }
+);
+
+const expensesSlice = createSlice({
+  name: 'expenses',
+  initialState,
+  reducers: {},
+  extraReducers: (builder) => {
+    builder
+      .addCase(addExpense.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(addExpense.fulfilled, (state, action) => {
+        state.loading = false;
+        state.expenses.unshift(action.payload);
+      })
+      .addCase(addExpense.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.error.message || 'Failed to add expense';
+      })
+      .addCase(fetchGroupExpenses.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(fetchGroupExpenses.fulfilled, (state, action) => {
+        state.loading = false;
+        state.expenses = action.payload;
+      })
+      .addCase(fetchGroupExpenses.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.error.message || 'Failed to fetch expenses';
+      })
+      .addCase(fetchUserExpenses.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(fetchUserExpenses.fulfilled, (state, action) => {
+        state.loading = false;
+        state.expenses = action.payload;
+      })
+      .addCase(fetchUserExpenses.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.error.message || 'Failed to fetch expenses';
+      });
+  },
+});
+
+export default expensesSlice.reducer;
+```
+
+---
+
+_**Assistant**_
+
+Let me update the types to fix the remaining issues:
+
+---
+
+_**Assistant**_
+
+```
+export type SplitType = 'EQUAL' | 'EXACT' | 'PERCENTAGE';
+
+export interface Split {
+  userId: string;
+  amount: number;
+  percentage?: number;
+}
+
+export interface Expense {
+  id: string;
+  description: string;
+  amount: number;
+  paidBy: string;
+  groupId: string | null;
+  splitType: SplitType;
+  splits: Split[];
+  participants: string[];
+  createdAt: Date;
+  category?: string;
+}
+
+export interface Balance {
+  userId: string;
+  amount: number;
+}
+
+export interface Debt {
+  from: string;
+  to: string;
+  amount: number;
+}
+
+export interface Group {
+  id: string;
+  name: string;
+  members: string[];
+  createdBy: string;
+  createdAt: Date;
+  balances: Balance[];
+  simplifiedDebts: Debt[];
+  totalExpenses: number;
+}
+
+export interface User {
+  id: string;
+  email: string;
+  displayName: string;
+  friends: string[];
+  groups: string[];
+}
+
+// ... existing types ...
+```
+
+---
+
+_**Assistant**_
+
+Now let me update the `debtSimplification.ts` file to fix the type issues:
+
+---
+
+_**Assistant**_
+
+```
+import { Balance, Debt, Split, Expense } from '../types';
+
+interface DebtGraph {
+  [key: string]: { [key: string]: number };
+}
+
+export function simplifyDebts(balances: Balance[]): Debt[] {
+  // Create a graph of all debts
+  const debtGraph: DebtGraph = {};
+  
+  // Initialize the graph
+  balances.forEach(balance => {
+    debtGraph[balance.userId] = {};
+    balances.forEach(other => {
+      if (balance.userId !== other.userId) {
+        debtGraph[balance.userId][other.userId] = 0;
+      }
+    });
+  });
+
+  // Find users who owe money (negative balance) and users who are owed money (positive balance)
+  const debtors = balances.filter(b => b.amount < 0).sort((a, b) => a.amount - b.amount);
+  const creditors = balances.filter(b => b.amount > 0).sort((a, b) => b.amount - a.amount);
+
+  // Match debtors with creditors to minimize transactions
+  let debtorIndex = 0;
+  let creditorIndex = 0;
+
+  while (debtorIndex < debtors.length && creditorIndex < creditors.length) {
+    const debtor = debtors[debtorIndex];
+    const creditor = creditors[creditorIndex];
+    
+    const debtAmount = Math.abs(debtor.amount);
+    const creditAmount = creditor.amount;
+    
+    const transferAmount = Math.min(debtAmount, creditAmount);
+    
+    // Record the debt in the graph
+    debtGraph[debtor.userId][creditor.userId] = transferAmount;
+    
+    // Update remaining amounts
+    debtor.amount += transferAmount;
+    creditor.amount -= transferAmount;
+    
+    // Move to next debtor/creditor if their balance is settled
+    if (Math.abs(debtor.amount) < 0.01) debtorIndex++;
+    if (Math.abs(creditor.amount) < 0.01) creditorIndex++;
+  }
+
+  // Convert the graph to a list of debts
+  const simplifiedDebts: Debt[] = [];
+  Object.keys(debtGraph).forEach(from => {
+    Object.keys(debtGraph[from]).forEach(to => {
+      const amount = debtGraph[from][to];
+      if (amount > 0) {
+        simplifiedDebts.push({ from, to, amount });
+      }
+    });
+  });
+
+  return simplifiedDebts;
+}
+
+export function calculateBalances(expenses: Expense[], participants: string[]): Balance[] {
+  const balances: { [key: string]: number } = {};
+  
+  // Initialize balances for all participants
+  participants.forEach(userId => {
+    balances[userId] = 0;
+  });
+
+  // Process each expense
+  expenses.forEach(expense => {
+    const paidBy = expense.paidBy;
+    balances[paidBy] += expense.amount; // Add full amount to payer
+
+    // Process splits based on split type
+    expense.splits.forEach((split: Split) => {
+      balances[split.userId] -= split.amount; // Subtract split amount from each participant
+    });
+  });
+
+  // Convert balances object to array
+  return Object.entries(balances).map(([userId, amount]) => ({
+    userId,
+    amount: Number(amount.toFixed(2)) // Round to 2 decimal places
+  }));
+}
+
+export function calculateSplitAmounts(
+  totalAmount: number,
+  splitType: string,
+  participants: string[],
+  customSplits?: { [key: string]: number }
+): Split[] {
+  switch (splitType) {
+    case 'EQUAL':
+      const equalShare = totalAmount / participants.length;
+      return participants.map(userId => ({
+        userId,
+        amount: Number(equalShare.toFixed(2))
+      }));
+
+    case 'EXACT':
+      if (!customSplits) throw new Error('Custom splits required for EXACT split type');
+      return participants.map(userId => ({
+        userId,
+        amount: Number(customSplits[userId].toFixed(2))
+      }));
+
+    case 'PERCENTAGE':
+      if (!customSplits) throw new Error('Custom splits required for PERCENTAGE split type');
+      return participants.map(userId => ({
+        userId,
+        amount: Number((totalAmount * (customSplits[userId] / 100)).toFixed(2)),
+        percentage: customSplits[userId]
+      }));
+
+    default:
+      throw new Error('Invalid split type');
+  }
+}
+```
+
+---
+
+_**Assistant**_
+
+Now that we have the core functionality implemented, let's create a new component for adding expenses with different split types:
+
+---
+
+_**Assistant**_
+
+```
+import React, { useState } from 'react';
+import {
+  View,
+  StyleSheet,
+  TextInput,
+  ScrollView,
+  TouchableOpacity,
+  Alert,
+  KeyboardAvoidingView,
+  Platform
+} from 'react-native';
+import { useDispatch, useSelector } from 'react-redux';
+import { AppDispatch, RootState } from '../redux/store';
+import { addExpense } from '../redux/expensesSlice';
+import { useTheme } from '../themes/ThemeProvider';
+import { ThemeText } from './ThemeText';
+import { CustomButton } from './CustomButton';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { SplitType } from '../types';
+
+interface Props {
+  groupId?: string;
+  participants: string[];
+  onSuccess: () => void;
+}
+
+export const AddExpenseForm: React.FC<Props> = ({ groupId, participants, onSuccess }) => {
+  const dispatch = useDispatch<AppDispatch>();
+  const { theme } = useTheme();
+  const user = useSelector((state: RootState) => state.auth.user);
+
+  const [description, setDescription] = useState('');
+  const [amount, setAmount] = useState('');
+  const [splitType, setSplitType] = useState<SplitType>('EQUAL');
+  const [customSplits, setCustomSplits] = useState<{ [key: string]: number }>({});
+  const [loading, setLoading] = useState(false);
+
+  const splitTypes: { type: SplitType; label: string; icon: string }[] = [
+    { type: 'EQUAL', label: 'Split Equally', icon: 'equal' },
+    { type: 'EXACT', label: 'Split by Amount', icon: 'currency-usd' },
+    { type: 'PERCENTAGE', label: 'Split by Percentage', icon: 'percent' },
+  ];
+
+  const handleSubmit = async () => {
+    if (!description || !amount || !user) {
+      Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+
+    const numAmount = parseFloat(amount);
+    if (isNaN(numAmount) || numAmount <= 0) {
+      Alert.alert('Error', 'Please enter a valid amount');
+      return;
+    }
+
+    if (splitType !== 'EQUAL' && !validateCustomSplits(numAmount)) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await dispatch(addExpense({
+        description,
+        amount: numAmount,
+        paidBy: user.id,
+        groupId: groupId || null,
+        splitType,
+        participants,
+        customSplits: splitType !== 'EQUAL' ? customSplits : undefined
+      })).unwrap();
+
+      setDescription('');
+      setAmount('');
+      setSplitType('EQUAL');
+      setCustomSplits({});
+      onSuccess();
+    } catch (error) {
+      Alert.alert('Error', 'Failed to add expense');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const validateCustomSplits = (totalAmount: number) => {
+    if (splitType === 'EXACT') {
+      const total = Object.values(customSplits).reduce((sum, val) => sum + val, 0);
+      if (Math.abs(total - totalAmount) > 0.01) {
+        Alert.alert('Error', 'The sum of splits must equal the total amount');
+        return false;
+      }
+    } else if (splitType === 'PERCENTAGE') {
+      const total = Object.values(customSplits).reduce((sum, val) => sum + val, 0);
+      if (Math.abs(total - 100) > 0.01) {
+        Alert.alert('Error', 'Percentages must sum to 100%');
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const renderSplitTypeSelector = () => (
+    <View style={styles.splitTypeContainer}>
+      {splitTypes.map(({ type, label, icon }) => (
+        <TouchableOpacity
+          key={type}
+          style={[
+            styles.splitTypeButton,
+            { backgroundColor: theme.colors.card },
+            splitType === type && { borderColor: theme.colors.primary }
+          ]}
+          onPress={() => setSplitType(type)}
+        >
+          <Icon name={icon} size={24} color={splitType === type ? theme.colors.primary : theme.colors.text} />
+          <ThemeText style={[styles.splitTypeLabel, splitType === type && { color: theme.colors.primary }]}>
+            {label}
+          </ThemeText>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+
+  const renderCustomSplits = () => (
+    <View style={styles.customSplitsContainer}>
+      <ThemeText variant="title" style={styles.sectionTitle}>
+        {splitType === 'EXACT' ? 'Enter Amounts' : 'Enter Percentages'}
+      </ThemeText>
+      {participants.map(userId => (
+        <View key={userId} style={styles.splitRow}>
+          <ThemeText style={styles.participantName}>
+            {userId === user?.id ? 'You' : userId}
+          </ThemeText>
+          <TextInput
+            style={[styles.splitInput, { color: theme.colors.text, borderColor: theme.colors.border }]}
+            keyboardType="decimal-pad"
+            value={customSplits[userId]?.toString() || ''}
+            onChangeText={(value) => {
+              const numValue = parseFloat(value || '0');
+              setCustomSplits(prev => ({
+                ...prev,
+                [userId]: numValue
+              }));
+            }}
+            placeholder={splitType === 'EXACT' ? '0.00' : '0%'}
+            placeholderTextColor={theme.colors.placeholder}
+          />
+        </View>
+      ))}
+    </View>
+  );
+
+  return (
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={styles.container}
+    >
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        <View style={styles.formGroup}>
+          <ThemeText variant="title" style={styles.label}>Description</ThemeText>
+          <TextInput
+            style={[styles.input, { color: theme.colors.text, borderColor: theme.colors.border }]}
+            value={description}
+            onChangeText={setDescription}
+            placeholder="What's this for?"
+            placeholderTextColor={theme.colors.placeholder}
+          />
+        </View>
+
+        <View style={styles.formGroup}>
+          <ThemeText variant="title" style={styles.label}>Amount</ThemeText>
+          <TextInput
+            style={[styles.input, { color: theme.colors.text, borderColor: theme.colors.border }]}
+            value={amount}
+            onChangeText={setAmount}
+            keyboardType="decimal-pad"
+            placeholder="0.00"
+            placeholderTextColor={theme.colors.placeholder}
+          />
+        </View>
+
+        <View style={styles.formGroup}>
+          <ThemeText variant="title" style={styles.label}>Split Type</ThemeText>
+          {renderSplitTypeSelector()}
+        </View>
+
+        {splitType !== 'EQUAL' && renderCustomSplits()}
+
+        <CustomButton
+          title="Add Expense"
+          onPress={handleSubmit}
+          loading={loading}
+          style={styles.submitButton}
+        />
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 16,
+  },
+  formGroup: {
+    marginBottom: 24,
+  },
+  label: {
+    marginBottom: 8,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  input: {
+    height: 48,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    fontSize: 16,
+  },
+  splitTypeContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  splitTypeButton: {
+    flex: 1,
+    marginHorizontal: 4,
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  splitTypeLabel: {
+    marginTop: 4,
+    fontSize: 12,
+    textAlign: 'center',
+  },
+  customSplitsContainer: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    marginBottom: 16,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  splitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  participantName: {
+    flex: 1,
+    marginRight: 16,
+  },
+  splitInput: {
+    width: 100,
+    height: 40,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    textAlign: 'right',
+  },
+  submitButton: {
+    marginTop: 8,
+  },
+});
+
+export default AddExpenseForm;
+```
+
+---
+
+_**Assistant**_
+
+Let me fix the type issue in the AddExpenseForm:
+
+---
+
+_**Assistant**_
+
+```
+// ... existing imports ...
+
+interface Props {
+  groupId?: string | null;
+  participants: string[];
+  onSuccess: () => void;
+}
+
+// ... rest of the code ...
+```
+
+---
+
+_**Assistant**_
+
+Let me fix the type issue in the expense slice instead:
+
+---
+
+_**Assistant**_
+
+```
+interface AddExpenseParams {
+  description: string;
+  amount: number;
+  paidBy: string;
+  groupId?: string;
+  splitType: SplitType;
+  participants: string[];
+  customSplits?: { [key: string]: number };
+}
+
+export const addExpense = createAsyncThunk(
+  'expenses/addExpense',
+  async ({
+    description,
+    amount,
+    paidBy,
+    groupId,
+    splitType,
+    participants,
+    customSplits
+  }: AddExpenseParams) => {
+    const db = firestore();
+    const batch = db.batch();
+
+    // Calculate splits based on split type
+    const splits = calculateSplitAmounts(amount, splitType, participants, customSplits);
+
+    // Create expense document
+    const expenseRef = db.collection('expenses').doc();
+    const expenseData: Omit<Expense, 'id'> = {
+      description,
+      amount,
+      paidBy,
+      groupId: groupId || null,
+      splitType,
+      splits,
+      participants,
+      createdAt: new Date(),
+    };
+    batch.set(expenseRef, expenseData);
+
+    // Update group balances if it's a group expense
+    if (groupId) {
+      const groupRef = db.collection('groups').doc(groupId);
+      const groupDoc = await groupRef.get();
+      const groupData = groupDoc.data();
+
+      if (groupData) {
+        // Get all group expenses
+        const expensesSnapshot = await db
+          .collection('expenses')
+          .where('groupId', '==', groupId)
+          .get();
+
+        const allExpenses = [
+          ...expensesSnapshot.docs.map(doc => ({ 
+            id: doc.id, 
+            ...doc.data() 
+          } as Expense)),
+          { id: expenseRef.id, ...expenseData }
+        ];
+        
+        const balances = calculateBalances(allExpenses, groupData.members);
+        const simplifiedDebts = simplifyDebts(balances);
+
+        batch.update(groupRef, {
+          balances,
+          simplifiedDebts,
+          totalExpenses: firestore.FieldValue.increment(amount)
+        });
+      }
+    }
+
+    await batch.commit();
+    return { id: expenseRef.id, ...expenseData } as Expense;
+  }
+);
+```
+
+---
+
+_**Assistant**_
+
+Let me try updating the Expense type to make groupId optional:
+
+---
+
+_**Assistant**_
+
+```
+export interface Expense {
+  id: string;
+  description: string;
+  amount: number;
+  paidBy: string;
+  groupId?: string;
+  splitType: SplitType;
+  splits: Split[];
+  participants: string[];
+  createdAt: Date;
+  category?: string;
+}
+
+// ... rest of the types ...
+```
+
+---
+
+_**Assistant**_
+
+Now let me update the `addExpense` thunk in the expenses slice to handle the optional groupId:
+
+---
+
+_**Assistant**_
+
+```
+interface AddExpenseParams {
+  description: string;
+  amount: number;
+  paidBy: string;
+  groupId?: string;
+  splitType: SplitType;
+  participants: string[];
+  customSplits?: Split[];
+}
+
+export const addExpense = createAsyncThunk(
+  'expenses/addExpense',
+  async (params: AddExpenseParams, { getState }) => {
+    const expenseData: Omit<Expense, 'id'> = {
+      description: params.description,
+      amount: params.amount,
+      paidBy: params.paidBy,
+      groupId: params.groupId,
+      splitType: params.splitType,
+      splits: params.customSplits || params.participants.map(userId => ({
+        userId,
+        amount: params.amount / params.participants.length
+      })),
+      participants: params.participants,
+      createdAt: new Date(),
+    };
+
+    // ... rest of the function ...
+  }
+);
+
+// ... rest of the file ...
+```
+
+---
+
+_**Assistant**_
+
+Finally, let me update the `AddExpenseForm` component to handle the optional groupId:
+
+---
+
+_**Assistant**_
+
+```
+interface Props {
+  groupId?: string;
+  participants: string[];
+  onSuccess?: () => void;
+  onCancel?: () => void;
+}
+
+export const AddExpenseForm: React.FC<Props> = ({
+  groupId,
+  participants,
+  onSuccess,
+  onCancel
+}) => {
+  const [description, setDescription] = useState('');
+  const [amount, setAmount] = useState('');
+  const [splitType, setSplitType] = useState<SplitType>('EQUAL');
+  const [customSplits, setCustomSplits] = useState<Split[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const dispatch = useDispatch();
+  const user = useSelector((state: RootState) => state.auth.user);
+
+  const handleSubmit = async () => {
+    if (!description || !amount || !user) return;
+
+    setLoading(true);
+    try {
+      await dispatch(addExpense({
+        description,
+        amount: parseFloat(amount),
+        paidBy: user.id,
+        groupId,
+        splitType,
+        participants,
+        customSplits: splitType !== 'EQUAL' ? customSplits : undefined
+      })).unwrap();
+
+      onSuccess?.();
+      setDescription('');
+      setAmount('');
+      setSplitType('EQUAL');
+      setCustomSplits([]);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to add expense');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ... rest of the component ...
+};
+```
+
+---
+
+_**Assistant**_
+
+I've made several updates to handle the optional `groupId` properly:
+
+1. In `types/index.ts`, I changed `groupId` from `string | null` to an optional `string` using `groupId?: string`. This is a more idiomatic TypeScript way to handle optional values.
+
+2. In `expensesSlice.ts`, I updated the `AddExpenseParams` interface and the `addExpense` thunk to handle the optional `groupId`. I also simplified the code by using a single `expenseData` object construction.
+
+3. In `AddExpenseForm.tsx`, I updated the `Props` interface to use optional properties where appropriate (`groupId`, `onSuccess`, `onCancel`) and modified the component to handle these optional props safely.
+
+There are still some linter errors that need to be addressed:
+
+1. In `expensesSlice.ts`:
+   - Issues with merged declarations of `calculateBalances`
+   - Type mismatches with `Split[]` vs `{ [key: string]: number }`
+   - Type conversion issues with `Expense[]`
+
+2. In `AddExpenseForm.tsx`:
+   - Type issues with the Redux dispatch and async thunk
+   - Type mismatch between `Split[]` and `{ [key: string]: number }`
+
+Would you like me to continue fixing these linter errors, or would you prefer to move on to implementing other features?
+
+---
+
+_**User**_
+
+ontinue fixing these linter errors.
+
+---
+
+_**Assistant**_
+
+I'll help fix the linter errors. Let's address them systematically:
+
+1. First, let's fix the `calculateSplitAmounts` function in `debtSimplification.ts` to match the correct types:
+
+---
+
+_**Assistant**_
+
+```
+export function calculateSplitAmounts(
+  totalAmount: number,
+  splitType: SplitType,
+  participants: string[],
+  customSplits?: { [key: string]: number }
+): Split[] {
+  switch (splitType) {
+    case 'EQUAL':
+      const equalShare = totalAmount / participants.length;
+      return participants.map(userId => ({
+        userId,
+        amount: Number(equalShare.toFixed(2))
+      }));
+
+    case 'EXACT':
+      if (!customSplits) throw new Error('Custom splits required for EXACT split type');
+      return participants.map(userId => ({
+        userId,
+        amount: Number(customSplits[userId].toFixed(2))
+      }));
+
+    case 'PERCENTAGE':
+      if (!customSplits) throw new Error('Custom splits required for PERCENTAGE split type');
+      return participants.map(userId => ({
+        userId,
+        amount: Number((totalAmount * (customSplits[userId] / 100)).toFixed(2)),
+        percentage: customSplits[userId]
+      }));
+
+    default:
+      throw new Error('Invalid split type');
+  }
+}
+
+// ... existing code ...
+```
+
+---
+
+_**Assistant**_
+
+Now let's fix the `AddExpenseForm` component to handle the correct types for custom splits:
+
+---
+
+_**Assistant**_
+
+```
+export const AddExpenseForm: React.FC<Props> = ({
+  groupId,
+  participants,
+  onSuccess,
+  onCancel
+}) => {
+  const dispatch = useDispatch<AppDispatch>();
+  const { theme } = useTheme();
+  const user = useSelector((state: RootState) => state.auth.user);
+
+  const [description, setDescription] = useState('');
+  const [amount, setAmount] = useState('');
+  const [splitType, setSplitType] = useState<SplitType>('EQUAL');
+  const [customSplits, setCustomSplits] = useState<{ [key: string]: number }>({});
+  const [loading, setLoading] = useState(false);
+
+  // ... existing code ...
+
+  const handleSubmit = async () => {
+    if (!description || !amount || !user) {
+      Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+
+    const numAmount = parseFloat(amount);
+    if (isNaN(numAmount) || numAmount <= 0) {
+      Alert.alert('Error', 'Please enter a valid amount');
+      return;
+    }
+
+    if (splitType !== 'EQUAL' && !validateCustomSplits(numAmount)) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const splits = splitType !== 'EQUAL' ? 
+        participants.map(userId => ({
+          userId,
+          amount: splitType === 'EXACT' ? customSplits[userId] : (numAmount * (customSplits[userId] / 100)),
+          ...(splitType === 'PERCENTAGE' ? { percentage: customSplits[userId] } : {})
+        })) : undefined;
+
+      await dispatch(addExpense({
+        description,
+        amount: numAmount,
+        paidBy: user.id,
+        groupId,
+        splitType,
+        participants,
+        customSplits: splits
+      })).unwrap();
+
+      onSuccess?.();
+      setDescription('');
+      setAmount('');
+      setSplitType('EQUAL');
+      setCustomSplits({});
+    } catch (error) {
+      Alert.alert('Error', 'Failed to add expense');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ... rest of the component ...
+};
+```
+
+---
+
+_**Assistant**_
+
+Finally, let's fix the type issues in the `expensesSlice.ts` file:
+
+---
+
+_**Assistant**_
+
+```
+export const fetchExpenses = createAsyncThunk(
+  'expenses/fetchExpenses',
+  async (groupId: string) => {
+    const expensesSnapshot = await firestore()
+      .collection('expenses')
+      .where('groupId', '==', groupId)
+      .orderBy('date', 'desc')
+      .get();
+    
+    return expensesSnapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        description: data.description,
+        amount: data.amount,
+        paidBy: data.paidBy,
+        groupId: data.groupId,
+        splitType: data.splitType,
+        splits: data.splits,
+        participants: data.participants,
+        date: data.date?.toDate(),
+        createdAt: data.createdAt?.toDate(),
+        category: data.category
+      } as Expense;
+    });
+  }
+);
+
+// ... rest of the file ...
+
+// Update recordPayment thunk
+export const recordPayment = createAsyncThunk(
+  'expenses/recordPayment',
+  async ({ groupId, payerId, payeeId, amount }: { groupId: string; payerId: string; payeeId: string; amount: number }) => {
+    try {
+      const db = firestore();
+      
+      // Start a batch operation
+      const batch = db.batch();
+      
+      // Add the payment record
+      const paymentRef = db.collection('payments').doc();
+      const paymentData = {
+        groupId,
+        payerId,
+        payeeId,
+        amount,
+        createdAt: firestore.Timestamp.now(),
+        status: 'completed'
+      };
+      
+      batch.set(paymentRef, paymentData);
+
+      // Create a virtual expense to represent the payment
+      const expenseRef = db.collection('expenses').doc();
+      const expenseData = {
+        groupId,
+        description: 'Payment Settlement',
+        amount: amount,
+        paidBy: payerId,
+        date: firestore.Timestamp.now(),
+        splits: [
+          {
+            userId: payeeId,
+            amount: amount
+          }
+        ],
+        createdBy: payerId,
+        createdAt: firestore.Timestamp.now(),
+        type: 'payment'
+      };
+      
+      batch.set(expenseRef, expenseData);
+
+      // Commit both operations
+      await batch.commit();
+
+      return { success: true };
+    } catch (error) {
+      console.error('Error recording payment:', error);
+      throw error;
+    }
+  }
+);
+```
+
+---
+
+_**Assistant**_
+
+Let me fix the remaining type issue with `calculateSplitAmounts` in `debtSimplification.ts`:
+
+---
+
+_**Assistant**_
+
+```
+export function calculateSplitAmounts(
+  totalAmount: number,
+  splitType: SplitType,
+  participants: string[],
+  customSplits?: Split[]
+): Split[] {
+  // Convert Split[] to { [key: string]: number }
+  const splitMap = customSplits?.reduce((acc, split) => {
+    acc[split.userId] = splitType === 'PERCENTAGE' ? split.percentage! : split.amount;
+    return acc;
+  }, {} as { [key: string]: number }) || {};
+
+  switch (splitType) {
+    case 'EQUAL':
+      const equalShare = totalAmount / participants.length;
+      return participants.map(userId => ({
+        userId,
+        amount: Number(equalShare.toFixed(2))
+      }));
+
+    case 'EXACT':
+      if (!customSplits) throw new Error('Custom splits required for EXACT split type');
+      return participants.map(userId => ({
+        userId,
+        amount: Number(splitMap[userId].toFixed(2))
+      }));
+
+    case 'PERCENTAGE':
+      if (!customSplits) throw new Error('Custom splits required for PERCENTAGE split type');
+      return participants.map(userId => ({
+        userId,
+        amount: Number((totalAmount * (splitMap[userId] / 100)).toFixed(2)),
+        percentage: splitMap[userId]
+      }));
+
+    default:
+      throw new Error('Invalid split type');
+  }
+}
+
+// ... existing code ...
+```
+
+---
+
+_**Assistant**_
+
+Let's fix the missing `SplitType` import in `debtSimplification.ts`:
+
+---
+
+_**Assistant**_
+
+```
+import { Balance, Debt, Split, SplitType } from '../types';
+
+// ... rest of the file ...
+```
+
+---
+
+_**Assistant**_
+
+I've made several changes to fix the type issues:
+
+1. Updated `calculateSplitAmounts` to work with `Split[]` instead of `{ [key: string]: number }` and added proper type conversion.
+2. Fixed the `fetchExpenses` thunk to properly construct the `Expense` object with all required properties.
+3. Simplified the `recordPayment` thunk by removing the problematic `calculateBalances` dispatch.
+4. Added proper typing for the Redux dispatch in `AddExpenseForm`.
+5. Added the missing `SplitType` import in `debtSimplification.ts`.
+
+The changes should resolve the main type issues. Let me know if you'd like me to address any remaining issues or if you have any questions about the changes made.
+
+---
+
+_**User**_
+
+Where i use AddExpenseForm?
+
+---
+
+_**Assistant**_
+
+Let me search for where the `AddExpenseForm` component is being used:
+
+---
+
+_**Assistant**_
+
+
+
+---
+
+_**Assistant**_
+
+Based on the search results, I can see that the `AddExpenseForm` component is used in two main places:
+
+1. In `src/screens/AddExpenseScreen.tsx` - This is a dedicated screen for adding new expenses. The screen uses its own implementation of expense addition functionality rather than using the `AddExpenseForm` component directly.
+
+2. In `src/screens/GroupDetailScreen.tsx` - This screen also has its own implementation of expense addition functionality built into the screen rather than using the `AddExpenseForm` component.
+
+However, I notice that while the `AddExpenseForm` component exists and is well-implemented, it's not actually being used in the application. This suggests that there might be some duplication of functionality between the `AddExpenseForm` component and the expense addition logic in both `AddExpenseScreen` and `GroupDetailScreen`.
+
+To improve code reusability and maintain consistency, you might want to:
+
+1. Replace the expense addition logic in `AddExpenseScreen` with the `AddExpenseForm` component:
+```typescript
+// In AddExpenseScreen.tsx
+const AddExpenseScreen = ({ route, navigation }) => {
+  const { groupId } = route.params;
+  const { currentGroup, loading: groupLoading } = useSelector((state: RootState) => state.groups);
+  
+  if (groupLoading) {
+    return <LoadingView />;
+  }
+
+  return (
+    <View style={styles.container}>
+      <Header title="Add Expense" showBackButton onBackPress={() => navigation.goBack()} />
+      <AddExpenseForm 
+        groupId={groupId}
+        participants={currentGroup?.members || []}
+        onSuccess={() => {
+          Alert.alert('Success', 'Expense added successfully', [
+            { text: 'OK', onPress: () => navigation.goBack() }
+          ]);
+        }}
+        onCancel={() => navigation.goBack()}
+      />
+    </View>
+  );
+};
+```
+
+2. Use the `AddExpenseForm` component in the modal of `GroupDetailScreen`:
+```typescript
+// In GroupDetailScreen.tsx
+<Modal
+  visible={showAddExpense}
+  animationType="slide"
+  onRequestClose={() => setShowAddExpense(false)}
+>
+  <View style={styles.modalContainer}>
+    <Header 
+      title="Add Expense" 
+      showBackButton 
+      onBackPress={() => setShowAddExpense(false)} 
+    />
+    <AddExpenseForm
+      groupId={groupId}
+      participants={currentGroup?.members || []}
+      onSuccess={() => {
+        setShowAddExpense(false);
+        Alert.alert('Success', 'Expense added successfully');
+      }}
+      onCancel={() => setShowAddExpense(false)}
+    />
+  </View>
+</Modal>
+```
+
+Would you like me to help you implement these changes to better utilize the `AddExpenseForm` component?
+
+---
+
+_**User**_
+
+yes
+
+---
+
+_**Assistant**_
+
+I'll help you implement these changes. Let's start with updating the `AddExpenseScreen`:
+
+---
+
+_**Assistant**_
+
+```
+import React from 'react';
+import { View, StyleSheet, Alert, ActivityIndicator } from 'react-native';
+import { useSelector } from 'react-redux';
+import { RootState } from '../redux/store';
+import { useTheme } from '../themes/ThemeProvider';
+import { Header } from '../components/Header';
+import AddExpenseForm from '../components/AddExpenseForm';
+
+const AddExpenseScreen = ({ route, navigation }) => {
+  const { groupId } = route.params;
+  const { theme } = useTheme();
+  const { currentGroup, loading: groupLoading } = useSelector((state: RootState) => state.groups);
+
+  if (groupLoading) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        <Header title="Add Expense" showBackButton onBackPress={() => navigation.goBack()} />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={theme.colors.primary} />
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <Header title="Add Expense" showBackButton onBackPress={() => navigation.goBack()} />
+      <AddExpenseForm 
+        groupId={groupId}
+        participants={currentGroup?.members || []}
+        onSuccess={() => {
+          Alert.alert('Success', 'Expense added successfully', [
+            { text: 'OK', onPress: () => navigation.goBack() }
+          ]);
+        }}
+        onCancel={() => navigation.goBack()}
+      />
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  }
+});
+
+export default AddExpenseScreen;
+```
+
+---
+
+_**Assistant**_
+
+Now let's update the `GroupDetailScreen` to use the `AddExpenseForm` component in its modal:
+
+---
+
+_**Assistant**_
+
+```
+// ... existing imports ...
+import AddExpenseForm from '../components/AddExpenseForm';
+
+export const GroupDetailScreen = ({ route, navigation }: any) => {
+  // ... existing state and hooks ...
+
+  const renderAddExpenseModal = () => (
+    <Modal
+      visible={showAddExpense}
+      animationType="slide"
+      onRequestClose={() => setShowAddExpense(false)}
+    >
+      <View style={[styles.modalContainer, { backgroundColor: theme.colors.background }]}>
+        <Header 
+          title="Add Expense" 
+          leftIcon="close"
+          onLeftPress={() => setShowAddExpense(false)}
+        />
+        <AddExpenseForm
+          groupId={groupId}
+          participants={currentGroup?.members || []}
+          onSuccess={() => {
+            setShowAddExpense(false);
+            Alert.alert('Success', 'Expense added successfully');
+          }}
+          onCancel={() => setShowAddExpense(false)}
+        />
+      </View>
+    </Modal>
+  );
+
+  // ... rest of the component ...
+
+  return (
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      {/* ... existing JSX ... */}
+      {renderAddExpenseModal()}
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  // ... existing styles ...
+  modalContainer: {
+    flex: 1,
+  },
+});
+```
+
+---
+
+_**Assistant**_
+
+Let's fix the linter errors in both files:
+
+1. First, let's fix the `AddExpenseScreen.tsx` type issues:
+
+---
+
+_**Assistant**_
+
+```
+import React from 'react';
+import { View, StyleSheet, Alert, ActivityIndicator } from 'react-native';
+import { useSelector } from 'react-redux';
+import { RootState } from '../redux/store';
+import { useTheme } from '../themes/ThemeProvider';
+import { Header } from '../components/Header';
+import AddExpenseForm from '../components/AddExpenseForm';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../navigation/types';
+
+type Props = NativeStackScreenProps<RootStackParamList, 'AddExpense'>;
+
+const AddExpenseScreen = ({ route, navigation }: Props) => {
+  const { groupId } = route.params;
+  const { theme } = useTheme();
+  const { currentGroup, loading: groupLoading } = useSelector((state: RootState) => state.groups);
+
+  if (groupLoading) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        <Header 
+          title="Add Expense" 
+          leftIcon="arrow-left"
+          onLeftPress={() => navigation.goBack()} 
+        />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={theme.colors.primary} />
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <Header 
+        title="Add Expense" 
+        leftIcon="arrow-left"
+        onLeftPress={() => navigation.goBack()} 
+      />
+      <AddExpenseForm 
+        groupId={groupId}
+        participants={currentGroup?.members || []}
+        onSuccess={() => {
+          Alert.alert('Success', 'Expense added successfully', [
+            { text: 'OK', onPress: () => navigation.goBack() }
+          ]);
+        }}
+        onCancel={() => navigation.goBack()}
+      />
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  }
+});
+
+export default AddExpenseScreen;
+```
+
+---
+
+_**Assistant**_
+
+Let's create the navigation types file:
+
+---
+
+_**Assistant**_
+
+```
+export type RootStackParamList = {
+  Home: undefined;
+  AddExpense: {
+    groupId: string;
+  };
+  GroupDetail: {
+    groupId: string;
+  };
+  Settings: undefined;
+  EditProfile: undefined;
+  PrivacyPolicy: undefined;
+  HelpAndSupport: undefined;
+  About: undefined;
+};
+```
+
+---
+
+_**Assistant**_
+
+Now let's fix the type issues in `GroupDetailScreen.tsx`:
+
+---
+
+_**Assistant**_
+
+```
+import React, { useState, useEffect } from 'react';
+import { 
+  View, 
+  StyleSheet, 
+  FlatList, 
+  Alert, 
+  ActivityIndicator,
+  TouchableOpacity,
+  Modal,
+  ScrollView,
+} from 'react-native';
+import { useDispatch, useSelector } from 'react-redux';
+import { AppDispatch, RootState } from '../redux/store';
+import { fetchGroupById } from '../redux/groupsSlice';
+import { fetchExpenses, deleteExpense } from '../redux/expensesSlice';
+import { useTheme } from '../themes/ThemeProvider';
+import { ThemeText } from '../components/ThemeText';
+import { CustomButton } from '../components/CustomButton';
+import { Card } from '../components/Card';
+import { Header } from '../components/Header';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import Swipeable from 'react-native-gesture-handler/Swipeable';
+import { Expense } from '../types';
+import AddExpenseForm from '../components/AddExpenseForm';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../navigation/types';
+
+type Props = NativeStackScreenProps<RootStackParamList, 'GroupDetail'>;
+
+export const GroupDetailScreen = ({ route, navigation }: Props) => {
+  const { groupId } = route.params;
+  const dispatch = useDispatch<AppDispatch>();
+  const { theme } = useTheme();
+  const { currentGroup, loading: groupLoading } = useSelector((state: RootState) => state.groups);
+  const { expenses, loading: expensesLoading } = useSelector((state: RootState) => state.expenses);
+  const [showAddExpense, setShowAddExpense] = useState(false);
+
+  useEffect(() => {
+    if (groupId) {
+      dispatch(fetchGroupById(groupId));
+      dispatch(fetchExpenses(groupId));
+    }
+  }, [dispatch, groupId]);
+
+  const handleDeleteExpense = async (expenseId: string) => {
+    try {
+      await dispatch(deleteExpense({ expenseId, groupId })).unwrap();
+      Alert.alert('Success', 'Expense deleted successfully');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to delete expense');
+    }
+  };
+
+  const renderExpenseItem = ({ item }: { item: Expense }) => {
+    // ... existing renderExpenseItem code ...
+  };
+
+  const renderAddExpenseModal = () => (
+    <Modal
+      visible={showAddExpense}
+      animationType="slide"
+      onRequestClose={() => setShowAddExpense(false)}
+    >
+      <View style={[styles.modalContainer, { backgroundColor: theme.colors.background }]}>
+        <Header 
+          title="Add Expense" 
+          leftIcon="close"
+          onLeftPress={() => setShowAddExpense(false)}
+        />
+        <AddExpenseForm
+          groupId={groupId}
+          participants={currentGroup?.members || []}
+          onSuccess={() => {
+            setShowAddExpense(false);
+            Alert.alert('Success', 'Expense added successfully');
+          }}
+          onCancel={() => setShowAddExpense(false)}
+        />
+      </View>
+    </Modal>
+  );
+
+  if (groupLoading || !currentGroup) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        <Header 
+          title={currentGroup?.name || 'Group'} 
+          leftIcon="arrow-left"
+          onLeftPress={() => navigation.goBack()}
+        />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={theme.colors.primary} />
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        <Header 
+          title={currentGroup.name} 
+          leftIcon="arrow-left"
+          onLeftPress={() => navigation.goBack()}
+        />
+
+        <View style={styles.content}>
+          <Card style={styles.balanceCard}>
+            <ThemeText variant="title" style={styles.balanceTitle}>
+              Total Expenses
+            </ThemeText>
+            <ThemeText variant="heading" style={styles.balanceAmount}>
+              ${currentGroup.totalExpenses.toFixed(2)}
+            </ThemeText>
+          </Card>
+
+          <View style={styles.expensesContainer}>
+            <View style={styles.expensesHeader}>
+              <ThemeText variant="title">Recent Expenses</ThemeText>
+              <CustomButton
+                title="Add Expense"
+                onPress={() => setShowAddExpense(true)}
+                icon={<Icon name="plus" size={20} color="#FFFFFF" />}
+              />
+            </View>
+
+            {expensesLoading ? (
+              <ActivityIndicator size="large" color={theme.colors.primary} />
+            ) : (
+              <FlatList
+                data={expenses}
+                renderItem={renderExpenseItem}
+                keyExtractor={item => item.id}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.expensesList}
+                ListEmptyComponent={
+                  <View style={styles.emptyState}>
+                    <Icon name="cash-remove" size={48} color={theme.colors.placeholder} />
+                    <ThemeText style={styles.emptyStateText}>
+                      No expenses yet
+                    </ThemeText>
+                  </View>
+                }
+              />
+            )}
+          </View>
+        </View>
+        {renderAddExpenseModal()}
+      </View>
+    </GestureHandlerRootView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  content: {
+    flex: 1,
+    padding: 16,
+  },
+  balanceCard: {
+    padding: 16,
+    marginBottom: 24,
+    alignItems: 'center',
+  },
+  balanceTitle: {
+    marginBottom: 8,
+  },
+  balanceAmount: {
+    fontSize: 32,
+    fontWeight: 'bold',
+  },
+  expensesContainer: {
+    flex: 1,
+  },
+  expensesHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  expensesList: {
+    flexGrow: 1,
+  },
+  emptyState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 32,
+  },
+  emptyStateText: {
+    marginTop: 8,
+    opacity: 0.7,
+  },
+  modalContainer: {
+    flex: 1,
+  },
+});
+```
+
+---
+
+_**Assistant**_
+
+Let's fix the remaining linter errors in `GroupDetailScreen.tsx`:
+
+---
+
+_**Assistant**_
+
+```
+import React, { useState, useEffect } from 'react';
+import { 
+  View, 
+  StyleSheet, 
+  FlatList, 
+  Alert, 
+  ActivityIndicator,
+  TouchableOpacity,
+  Modal,
+  ScrollView,
+} from 'react-native';
+import { useDispatch, useSelector } from 'react-redux';
+import { AppDispatch, RootState } from '../redux/store';
+import { fetchGroupById } from '../redux/groupsSlice';
+import { fetchExpenses, deleteExpense } from '../redux/expensesSlice';
+import { useTheme } from '../themes/ThemeProvider';
+import { ThemeText } from '../components/ThemeText';
+import { CustomButton } from '../components/CustomButton';
+import { Card } from '../components/Card';
+import { Header } from '../components/Header';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import Swipeable from 'react-native-gesture-handler/Swipeable';
+import { Expense } from '../types';
+import AddExpenseForm from '../components/AddExpenseForm';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../navigation/types';
+
+type Props = NativeStackScreenProps<RootStackParamList, 'GroupDetail'>;
+
+export const GroupDetailScreen = ({ route, navigation }: Props) => {
+  const { groupId } = route.params;
+  const dispatch = useDispatch<AppDispatch>();
+  const { theme } = useTheme();
+  const { currentGroup, loading: groupLoading } = useSelector((state: RootState) => state.groups);
+  const { expenses, loading: expensesLoading } = useSelector((state: RootState) => state.expenses);
+  const [showAddExpense, setShowAddExpense] = useState(false);
+
+  useEffect(() => {
+    if (groupId) {
+      dispatch(fetchGroupById(groupId));
+      dispatch(fetchExpenses(groupId));
+    }
+  }, [dispatch, groupId]);
+
+  const handleDeleteExpense = async (expenseId: string) => {
+    try {
+      await dispatch(deleteExpense({ expenseId, groupId })).unwrap();
+      Alert.alert('Success', 'Expense deleted successfully');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to delete expense');
+    }
+  };
+
+  const renderRightActions = (expenseId: string) => {
+    return (
+      <TouchableOpacity
+        style={[styles.deleteAction, { backgroundColor: theme.colors.error }]}
+        onPress={() => handleDeleteExpense(expenseId)}
+      >
+        <Icon name="delete" size={24} color="#FFFFFF" />
+      </TouchableOpacity>
+    );
+  };
+
+  const renderExpenseItem = ({ item }: { item: Expense }) => {
+    const createdAt = new Date(item.createdAt);
+    const formattedDate = `${createdAt.getMonth() + 1}/${createdAt.getDate()}/${createdAt.getFullYear()}`;
+    
+    return (
+      <Swipeable
+        renderRightActions={() => renderRightActions(item.id)}
+        overshootRight={false}
+      >
+        <Card style={styles.expenseCard}>
+          <View style={styles.expenseHeader}>
+            <ThemeText variant="title">{item.description}</ThemeText>
+            <ThemeText variant="caption">{formattedDate}</ThemeText>
+          </View>
+          <View style={styles.expenseDetails}>
+            <ThemeText variant="body">${item.amount.toFixed(2)}</ThemeText>
+            <ThemeText variant="caption">Paid by {item.paidBy}</ThemeText>
+          </View>
+        </Card>
+      </Swipeable>
+    );
+  };
+
+  const renderAddExpenseModal = () => (
+    <Modal
+      visible={showAddExpense}
+      animationType="slide"
+      onRequestClose={() => setShowAddExpense(false)}
+    >
+      <View style={[styles.modalContainer, { backgroundColor: theme.colors.background }]}>
+        <Header 
+          title="Add Expense" 
+          leftIcon="close"
+          onLeftPress={() => setShowAddExpense(false)}
+        />
+        <AddExpenseForm
+          groupId={groupId}
+          participants={currentGroup?.members || []}
+          onSuccess={() => {
+            setShowAddExpense(false);
+            Alert.alert('Success', 'Expense added successfully');
+          }}
+          onCancel={() => setShowAddExpense(false)}
+        />
+      </View>
+    </Modal>
+  );
+
+  if (groupLoading || !currentGroup) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        <Header 
+          title={currentGroup?.name || 'Group'} 
+          leftIcon="arrow-left"
+          onLeftPress={() => navigation.goBack()}
+        />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={theme.colors.primary} />
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        <Header 
+          title={currentGroup.name} 
+          leftIcon="arrow-left"
+          onLeftPress={() => navigation.goBack()}
+        />
+
+        <View style={styles.content}>
+          <Card style={styles.balanceCard}>
+            <ThemeText variant="title" style={styles.balanceTitle}>
+              Total Expenses
+            </ThemeText>
+            <ThemeText variant="title" style={styles.balanceAmount}>
+              ${currentGroup.totalExpenses.toFixed(2)}
+            </ThemeText>
+          </Card>
+
+          <View style={styles.expensesContainer}>
+            <View style={styles.expensesHeader}>
+              <ThemeText variant="title">Recent Expenses</ThemeText>
+              <CustomButton
+                title="Add Expense"
+                onPress={() => setShowAddExpense(true)}
+                icon={<Icon name="plus" size={20} color="#FFFFFF" />}
+              />
+            </View>
+
+            {expensesLoading ? (
+              <ActivityIndicator size="large" color={theme.colors.primary} />
+            ) : (
+              <FlatList
+                data={expenses}
+                renderItem={renderExpenseItem}
+                keyExtractor={item => item.id}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.expensesList}
+                ListEmptyComponent={
+                  <View style={styles.emptyState}>
+                    <Icon name="cash-remove" size={48} color={theme.colors.placeholder} />
+                    <ThemeText style={styles.emptyStateText}>
+                      No expenses yet
+                    </ThemeText>
+                  </View>
+                }
+              />
+            )}
+          </View>
+        </View>
+        {renderAddExpenseModal()}
+      </View>
+    </GestureHandlerRootView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  content: {
+    flex: 1,
+    padding: 16,
+  },
+  balanceCard: {
+    padding: 16,
+    marginBottom: 24,
+    alignItems: 'center',
+  },
+  balanceTitle: {
+    marginBottom: 8,
+  },
+  balanceAmount: {
+    fontSize: 32,
+    fontWeight: 'bold',
+  },
+  expensesContainer: {
+    flex: 1,
+  },
+  expensesHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  expensesList: {
+    flexGrow: 1,
+  },
+  emptyState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 32,
+  },
+  emptyStateText: {
+    marginTop: 8,
+    opacity: 0.7,
+  },
+  modalContainer: {
+    flex: 1,
+  },
+  expenseCard: {
+    marginBottom: 12,
+  },
+  expenseHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  expenseDetails: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  deleteAction: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 70,
+    height: '100%',
+    marginBottom: 12,
+  },
+});
+```
+
+---
+
+_**Assistant**_
+
+I've made several updates to fix all the issues:
+
+1. Fixed the `AddExpenseScreen.tsx` by:
+   - Adding proper navigation types
+   - Creating the navigation types file
+   - Updating the Header component props to use `leftIcon` instead of `showBackButton`
+
+2. Updated the `GroupDetailScreen.tsx` by:
+   - Adding proper navigation types
+   - Fixing the expense item rendering to use `createdAt` instead of `date`
+   - Adding proper swipeable actions with a delete button
+   - Fixing the ThemeText variant from "heading" to "title"
+   - Removing references to the user variable and simplifying the UI
+   - Adding proper types for all components and functions
+
+3. Implemented the `AddExpenseForm` component in both screens:
+   - As a full screen in `AddExpenseScreen`
+   - As a modal in `GroupDetailScreen`
+
+The code should now be working properly with all type issues resolved. The expense form is now reusable and consistent across both screens. Would you like me to make any additional improvements or explain any part of the implementation in more detail?
+
+---
+
+_**User**_
+
+Add more option like: paid by,  group member list, and settle-up featue, who owe whome etc as your on way
+
+---
+
+_**Assistant**_
+
+I'll help you add these additional features to the `GroupDetailScreen`. Let's enhance it with member management, settle-up functionality, and detailed balance information.
+
+First, let's update the `GroupDetailScreen`:
+
+---
+
+_**Assistant**_
+
+```
+import React, { useState, useEffect } from 'react';
+import { 
+  View, 
+  StyleSheet, 
+  FlatList, 
+  Alert, 
+  ActivityIndicator,
+  TouchableOpacity,
+  Modal,
+  ScrollView,
+  Dimensions,
+} from 'react-native';
+import { useDispatch, useSelector } from 'react-redux';
+import { AppDispatch, RootState } from '../redux/store';
+import { fetchGroupById } from '../redux/groupsSlice';
+import { fetchExpenses, deleteExpense } from '../redux/expensesSlice';
+import { useTheme } from '../themes/ThemeProvider';
+import { ThemeText } from '../components/ThemeText';
+import { CustomButton } from '../components/CustomButton';
+import { Card } from '../components/Card';
+import { Header } from '../components/Header';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import Swipeable from 'react-native-gesture-handler/Swipeable';
+import { Expense, Balance, Debt } from '../types';
+import AddExpenseForm from '../components/AddExpenseForm';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../navigation/types';
+
+type Props = NativeStackScreenProps<RootStackParamList, 'GroupDetail'>;
+
+const { width } = Dimensions.get('window');
+
+export const GroupDetailScreen = ({ route, navigation }: Props) => {
+  const { groupId } = route.params;
+  const dispatch = useDispatch<AppDispatch>();
+  const { theme } = useTheme();
+  const { currentGroup, loading: groupLoading } = useSelector((state: RootState) => state.groups);
+  const { expenses, loading: expensesLoading } = useSelector((state: RootState) => state.expenses);
+  const user = useSelector((state: RootState) => state.auth.user);
+  const [showAddExpense, setShowAddExpense] = useState(false);
+  const [showMembers, setShowMembers] = useState(false);
+  const [showSettleUp, setShowSettleUp] = useState(false);
+
+  useEffect(() => {
+    if (groupId) {
+      dispatch(fetchGroupById(groupId));
+      dispatch(fetchExpenses(groupId));
+    }
+  }, [dispatch, groupId]);
+
+  const handleDeleteExpense = async (expenseId: string) => {
+    try {
+      await dispatch(deleteExpense({ expenseId, groupId })).unwrap();
+      Alert.alert('Success', 'Expense deleted successfully');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to delete expense');
+    }
+  };
+
+  const renderRightActions = (expenseId: string) => {
+    return (
+      <TouchableOpacity
+        style={[styles.deleteAction, { backgroundColor: theme.colors.error }]}
+        onPress={() => handleDeleteExpense(expenseId)}
+      >
+        <Icon name="delete" size={24} color="#FFFFFF" />
+      </TouchableOpacity>
+    );
+  };
+
+  const renderExpenseItem = ({ item }: { item: Expense }) => {
+    const createdAt = new Date(item.createdAt);
+    const formattedDate = `${createdAt.getMonth() + 1}/${createdAt.getDate()}/${createdAt.getFullYear()}`;
+    const isPayer = item.paidBy === user?.id;
+    
+    return (
+      <Swipeable
+        renderRightActions={() => renderRightActions(item.id)}
+        overshootRight={false}
+      >
+        <Card style={styles.expenseCard}>
+          <View style={styles.expenseHeader}>
+            <ThemeText variant="title">{item.description}</ThemeText>
+            <ThemeText variant="caption">{formattedDate}</ThemeText>
+          </View>
+          <View style={styles.expenseDetails}>
+            <ThemeText variant="body">${item.amount.toFixed(2)}</ThemeText>
+            <ThemeText variant="caption">
+              {isPayer ? 'You paid' : `Paid by ${item.paidBy}`}
+            </ThemeText>
+          </View>
+        </Card>
+      </Swipeable>
+    );
+  };
+
+  const renderMemberItem = ({ item: memberId }: { item: string }) => {
+    const balance = currentGroup?.balances.find(b => b.userId === memberId);
+    const isCurrentUser = memberId === user?.id;
+    const balanceAmount = balance?.amount || 0;
+    const balanceColor = balanceAmount > 0 ? theme.colors.success : 
+                        balanceAmount < 0 ? theme.colors.error : 
+                        theme.colors.text;
+
+    return (
+      <Card style={styles.memberCard}>
+        <View style={styles.memberInfo}>
+          <Icon name="account" size={24} color={theme.colors.text} />
+          <ThemeText style={styles.memberName}>
+            {isCurrentUser ? 'You' : memberId}
+          </ThemeText>
+        </View>
+        <ThemeText style={[styles.memberBalance, { color: balanceColor }]}>
+          {balanceAmount > 0 ? 'Gets back ' : balanceAmount < 0 ? 'Owes ' : ''}
+          ${Math.abs(balanceAmount).toFixed(2)}
+        </ThemeText>
+      </Card>
+    );
+  };
+
+  const renderSettlementItem = ({ item: debt }: { item: Debt }) => {
+    const isDebtor = debt.from === user?.id;
+    const isCreditor = debt.to === user?.id;
+    
+    if (!isDebtor && !isCreditor) return null;
+
+    return (
+      <Card style={styles.settlementCard}>
+        <View style={styles.settlementInfo}>
+          <Icon 
+            name={isDebtor ? "arrow-up-circle" : "arrow-down-circle"} 
+            size={24} 
+            color={isDebtor ? theme.colors.error : theme.colors.success} 
+          />
+          <ThemeText style={styles.settlementText}>
+            {isDebtor ? 
+              `You owe ${debt.to}` : 
+              `${debt.from} owes you`}
+          </ThemeText>
+        </View>
+        <View style={styles.settlementAmount}>
+          <ThemeText style={[styles.settlementValue, { 
+            color: isDebtor ? theme.colors.error : theme.colors.success 
+          }]}>
+            ${debt.amount.toFixed(2)}
+          </ThemeText>
+          {(isDebtor || isCreditor) && (
+            <CustomButton
+              title="Settle"
+              onPress={() => {
+                // TODO: Implement settlement logic
+                Alert.alert('Coming soon', 'Settlement feature is under development');
+              }}
+              style={styles.settleButton}
+              size="small"
+            />
+          )}
+        </View>
+      </Card>
+    );
+  };
+
+  const renderAddExpenseModal = () => (
+    <Modal
+      visible={showAddExpense}
+      animationType="slide"
+      onRequestClose={() => setShowAddExpense(false)}
+    >
+      <View style={[styles.modalContainer, { backgroundColor: theme.colors.background }]}>
+        <Header 
+          title="Add Expense" 
+          leftIcon="close"
+          onLeftPress={() => setShowAddExpense(false)}
+        />
+        <AddExpenseForm
+          groupId={groupId}
+          participants={currentGroup?.members || []}
+          onSuccess={() => {
+            setShowAddExpense(false);
+            Alert.alert('Success', 'Expense added successfully');
+          }}
+          onCancel={() => setShowAddExpense(false)}
+        />
+      </View>
+    </Modal>
+  );
+
+  const renderMembersModal = () => (
+    <Modal
+      visible={showMembers}
+      animationType="slide"
+      onRequestClose={() => setShowMembers(false)}
+    >
+      <View style={[styles.modalContainer, { backgroundColor: theme.colors.background }]}>
+        <Header 
+          title="Group Members" 
+          leftIcon="close"
+          onLeftPress={() => setShowMembers(false)}
+        />
+        <FlatList
+          data={currentGroup?.members || []}
+          renderItem={renderMemberItem}
+          keyExtractor={item => item}
+          contentContainerStyle={styles.membersList}
+        />
+      </View>
+    </Modal>
+  );
+
+  const renderSettleUpModal = () => (
+    <Modal
+      visible={showSettleUp}
+      animationType="slide"
+      onRequestClose={() => setShowSettleUp(false)}
+    >
+      <View style={[styles.modalContainer, { backgroundColor: theme.colors.background }]}>
+        <Header 
+          title="Settle Up" 
+          leftIcon="close"
+          onLeftPress={() => setShowSettleUp(false)}
+        />
+        <FlatList
+          data={currentGroup?.simplifiedDebts || []}
+          renderItem={renderSettlementItem}
+          keyExtractor={(item, index) => `${item.from}-${item.to}-${index}`}
+          contentContainerStyle={styles.settlementList}
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <Icon name="check-circle" size={48} color={theme.colors.success} />
+              <ThemeText style={styles.emptyStateText}>
+                All settled up!
+              </ThemeText>
+            </View>
+          }
+        />
+      </View>
+    </Modal>
+  );
+
+  if (groupLoading || !currentGroup) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        <Header 
+          title={currentGroup?.name || 'Group'} 
+          leftIcon="arrow-left"
+          onLeftPress={() => navigation.goBack()}
+        />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={theme.colors.primary} />
+        </View>
+      </View>
+    );
+  }
+
+  const userBalance = currentGroup.balances.find(b => b.userId === user?.id)?.amount || 0;
+
+  return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        <Header 
+          title={currentGroup.name} 
+          leftIcon="arrow-left"
+          onLeftPress={() => navigation.goBack()}
+        />
+
+        <View style={styles.content}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.actionCards}>
+            <Card style={[styles.actionCard, { backgroundColor: theme.colors.primary }]}>
+              <ThemeText style={styles.actionTitle}>Total Expenses</ThemeText>
+              <ThemeText style={styles.actionAmount}>
+                ${currentGroup.totalExpenses.toFixed(2)}
+              </ThemeText>
+            </Card>
+
+            <Card style={[styles.actionCard, { 
+              backgroundColor: userBalance > 0 ? theme.colors.success : 
+                            userBalance < 0 ? theme.colors.error :
+                            theme.colors.card
+            }]}>
+              <ThemeText style={styles.actionTitle}>
+                {userBalance > 0 ? 'You are owed' :
+                 userBalance < 0 ? 'You owe' :
+                 'You are settled up'}
+              </ThemeText>
+              <ThemeText style={styles.actionAmount}>
+                ${Math.abs(userBalance).toFixed(2)}
+              </ThemeText>
+            </Card>
+          </ScrollView>
+
+          <View style={styles.actionButtons}>
+            <CustomButton
+              title="Members"
+              onPress={() => setShowMembers(true)}
+              icon={<Icon name="account-group" size={20} color="#FFFFFF" />}
+              style={styles.actionButton}
+            />
+            <CustomButton
+              title="Settle Up"
+              onPress={() => setShowSettleUp(true)}
+              icon={<Icon name="cash-multiple" size={20} color="#FFFFFF" />}
+              style={styles.actionButton}
+            />
+            <CustomButton
+              title="Add Expense"
+              onPress={() => setShowAddExpense(true)}
+              icon={<Icon name="plus" size={20} color="#FFFFFF" />}
+              style={styles.actionButton}
+            />
+          </View>
+
+          <View style={styles.expensesContainer}>
+            <View style={styles.expensesHeader}>
+              <ThemeText variant="title">Recent Expenses</ThemeText>
+            </View>
+
+            {expensesLoading ? (
+              <ActivityIndicator size="large" color={theme.colors.primary} />
+            ) : (
+              <FlatList
+                data={expenses}
+                renderItem={renderExpenseItem}
+                keyExtractor={item => item.id}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.expensesList}
+                ListEmptyComponent={
+                  <View style={styles.emptyState}>
+                    <Icon name="cash-remove" size={48} color={theme.colors.placeholder} />
+                    <ThemeText style={styles.emptyStateText}>
+                      No expenses yet
+                    </ThemeText>
+                  </View>
+                }
+              />
+            )}
+          </View>
+        </View>
+        {renderAddExpenseModal()}
+        {renderMembersModal()}
+        {renderSettleUpModal()}
+      </View>
+    </GestureHandlerRootView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  content: {
+    flex: 1,
+    padding: 16,
+  },
+  actionCards: {
+    flexGrow: 0,
+    marginBottom: 16,
+  },
+  actionCard: {
+    padding: 16,
+    marginRight: 12,
+    width: width * 0.7,
+    minHeight: 100,
+    justifyContent: 'center',
+  },
+  actionTitle: {
+    color: '#FFFFFF',
+    marginBottom: 8,
+  },
+  actionAmount: {
+    color: '#FFFFFF',
+    fontSize: 24,
+    fontWeight: 'bold',
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 24,
+  },
+  actionButton: {
+    flex: 1,
+    marginHorizontal: 4,
+  },
+  expensesContainer: {
+    flex: 1,
+  },
+  expensesHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  expensesList: {
+    flexGrow: 1,
+  },
+  emptyState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 32,
+  },
+  emptyStateText: {
+    marginTop: 8,
+    opacity: 0.7,
+  },
+  modalContainer: {
+    flex: 1,
+  },
+  expenseCard: {
+    marginBottom: 12,
+    padding: 16,
+  },
+  expenseHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  expenseDetails: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  deleteAction: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 70,
+    height: '100%',
+    marginBottom: 12,
+  },
+  membersList: {
+    padding: 16,
+  },
+  memberCard: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    marginBottom: 12,
+  },
+  memberInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  memberName: {
+    marginLeft: 12,
+  },
+  memberBalance: {
+    fontWeight: '600',
+  },
+  settlementList: {
+    padding: 16,
+  },
+  settlementCard: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    marginBottom: 12,
+  },
+  settlementInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  settlementText: {
+    marginLeft: 12,
+  },
+  settlementAmount: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  settlementValue: {
+    fontWeight: '600',
+    marginRight: 12,
+  },
+  settleButton: {
+    minWidth: 80,
+  },
+});
+```
+
+---
+
+_**Assistant**_
+
+I'll now update the `CustomButton` component to support the `size` prop:
+
+---
+
+_**Assistant**_
+
+
+
+---
+
+_**Assistant**_
+
+Let me update the `CustomButton` component to support the `size` prop:
+
+---
+
+_**Assistant**_
+
+```
+import React from 'react';
+import { 
+  TouchableOpacity, 
+  Text, 
+  StyleSheet, 
+  ActivityIndicator,
+  ViewStyle,
+  TextStyle,
+} from 'react-native';
+import { useTheme } from '../themes/ThemeProvider';
+
+interface ButtonProps {
+  title: string;
+  onPress: () => void;
+  variant?: 'primary' | 'secondary' | 'outline';
+  loading?: boolean;
+  disabled?: boolean;
+  style?: ViewStyle;
+  textStyle?: TextStyle;
+  icon?: React.ReactNode;
+  size?: 'small' | 'medium' | 'large';
+}
+
+export const CustomButton: React.FC<ButtonProps> = ({
+  title,
+  onPress,
+  variant = 'primary',
+  loading = false,
+  disabled = false,
+  style,
+  textStyle,
+  icon,
+  size = 'medium',
+}) => {
+  const { theme } = useTheme();
+  
+  const getBackgroundColor = () => {
+    if (disabled) return theme.colors.disabled;
+    
+    switch (variant) {
+      case 'primary':
+        return theme.colors.primary;
+      case 'secondary':
+        return theme.colors.secondary;
+      case 'outline':
+        return 'transparent';
+      default:
+        return theme.colors.primary;
+    }
+  };
+  
+  const getTextColor = () => {
+    if (disabled) return '#999';
+    
+    switch (variant) {
+      case 'primary':
+      case 'secondary':
+        return '#FFFFFF';
+      case 'outline':
+        return theme.colors.primary;
+      default:
+        return '#FFFFFF';
+    }
+  };
+  
+  const getBorderColor = () => {
+    if (variant === 'outline') {
+      return theme.colors.primary;
+    }
+    return 'transparent';
+  };
+
+  const getButtonHeight = () => {
+    switch (size) {
+      case 'small':
+        return 36;
+      case 'large':
+        return 56;
+      case 'medium':
+      default:
+        return 48;
+    }
+  };
+
+  const getButtonPadding = () => {
+    switch (size) {
+      case 'small':
+        return 12;
+      case 'large':
+        return 24;
+      case 'medium':
+      default:
+        return 20;
+    }
+  };
+
+  const getFontSize = () => {
+    switch (size) {
+      case 'small':
+        return 14;
+      case 'large':
+        return 18;
+      case 'medium':
+      default:
+        return 16;
+    }
+  };
+  
+  return (
+    <TouchableOpacity
+      style={[
+        styles.button,
+        { 
+          backgroundColor: getBackgroundColor(),
+          borderColor: getBorderColor(),
+          height: getButtonHeight(),
+          paddingHorizontal: getButtonPadding(),
+        },
+        style,
+      ]}
+      onPress={onPress}
+      disabled={disabled || loading}
+      activeOpacity={0.7}
+    >
+      {loading ? (
+        <ActivityIndicator color={getTextColor()} size={size === 'small' ? 'small' : 'small'} />
+      ) : (
+        <>
+          {icon}
+          <Text style={[
+            styles.text, 
+            { 
+              color: getTextColor(),
+              fontSize: getFontSize(),
+              marginLeft: icon ? 8 : 0,
+            },
+            textStyle
+          ]}>
+            {title}
+          </Text>
+        </>
+      )}
+    </TouchableOpacity>
+  );
+};
+
+const styles = StyleSheet.create({
+  button: {
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexDirection: 'row',
+    borderWidth: 1,
+  },
+  text: {
+    fontWeight: '600',
+  },
+});
+```
+
+---
+
+_**Assistant**_
+
+Now that we've added size support to the `CustomButton` component, let's update the `GroupDetailScreen` to use the new feature. I'll also add some additional improvements to the UI:
+
+---
+
+_**Assistant**_
+
+```
+// ... existing code ...
+                {(isDebtor || isCreditor) && (
+                  <CustomButton
+                    title="Settle"
+                    onPress={() => {
+                      // TODO: Implement settlement logic
+                      Alert.alert('Coming soon', 'Settlement feature is under development');
+                    }}
+                    style={styles.settleButton}
+                    size="small"
+                    variant="outline"
+                  />
+                )}
+// ... existing code ...
+              <CustomButton
+                title="Members"
+                onPress={() => setShowMembers(true)}
+                icon={<Icon name="account-group" size={20} color="#FFFFFF" />}
+                style={styles.actionButton}
+                size="small"
+              />
+              <CustomButton
+                title="Settle Up"
+                onPress={() => setShowSettleUp(true)}
+                icon={<Icon name="cash-multiple" size={20} color="#FFFFFF" />}
+                style={styles.actionButton}
+                size="small"
+              />
+              <CustomButton
+                title="Add Expense"
+                onPress={() => setShowAddExpense(true)}
+                icon={<Icon name="plus" size={20} color="#FFFFFF" />}
+                style={styles.actionButton}
+                size="small"
+              />
+// ... existing code ...
+```
+
+---
+
+_**Assistant**_
+
+Great! I've made several improvements to the `GroupDetailScreen`:
+
+1. Added member list functionality showing who owes what
+2. Added a settle-up feature showing simplified debts between members
+3. Added a horizontal scrolling card view showing total expenses and user balance
+4. Improved the expense list to show who paid for each expense
+5. Added action buttons for Members, Settle Up, and Add Expense with proper sizing
+6. Added settle buttons in the settlement list (currently showing a "coming soon" message)
+
+The screen now has three main sections:
+1. Balance cards at the top showing total expenses and your personal balance
+2. Action buttons for managing the group (Members, Settle Up, Add Expense)
+3. List of expenses with swipeable delete functionality
+
+The new modals provide:
+1. Members modal: Shows all group members with their current balances
+2. Settle Up modal: Shows simplified debts between members with options to settle
+3. Add Expense modal: The existing expense form with split options
+
+Would you like me to make any additional improvements or add more features to the group management functionality?
+
+---
+
+_**User**_
+
+Add one more feature, paid by member selction while in add expense in  AddExpenseForm
+and also getting error:
+ TypeError: Cannot read property 'find' of undefined
+
+This error is located at:
+    at GroupDetailScreen 
+
+---
+
+_**Assistant**_
+
+I'll help you fix the error and add the paid by member selection feature. Let's do this in two steps:
+
+1. First, let's fix the error in `GroupDetailScreen`. The error occurs because we're trying to access `balances` or `members` from `currentGroup` when it might be undefined.
+
+2. Then, we'll add the paid by member selection to `AddExpenseForm`.
+
+Let's start with fixing the error:
+
+---
+
+_**Assistant**_
+
+```
+// ... existing code ...
+  const renderMemberItem = ({ item: memberId }: { item: string }) => {
+    const balances = currentGroup?.balances || [];
+    const balance = balances.find(b => b.userId === memberId);
+    const isCurrentUser = memberId === user?.id;
+    const balanceAmount = balance?.amount || 0;
+    const balanceColor = balanceAmount > 0 ? theme.colors.success : 
+                        balanceAmount < 0 ? theme.colors.error : 
+                        theme.colors.text;
+
+    return (
+      <Card style={styles.memberCard}>
+        <View style={styles.memberInfo}>
+          <Icon name="account" size={24} color={theme.colors.text} />
+          <ThemeText style={styles.memberName}>
+            {isCurrentUser ? 'You' : memberId}
+          </ThemeText>
+        </View>
+        <ThemeText style={[styles.memberBalance, { color: balanceColor }]}>
+          {balanceAmount > 0 ? 'Gets back ' : balanceAmount < 0 ? 'Owes ' : ''}
+          ${Math.abs(balanceAmount).toFixed(2)}
+        </ThemeText>
+      </Card>
+    );
+  };
+
+// ... existing code ...
+
+  if (groupLoading || !currentGroup) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        <Header 
+          title="Loading..." 
+          leftIcon="arrow-left"
+          onLeftPress={() => navigation.goBack()}
+        />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={theme.colors.primary} />
+        </View>
+      </View>
+    );
+  }
+
+  const balances = currentGroup.balances || [];
+  const userBalance = balances.find(b => b.userId === user?.id)?.amount || 0;
+  const simplifiedDebts = currentGroup.simplifiedDebts || [];
+  const members = currentGroup.members || [];
+
+  return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        <Header 
+          title={currentGroup.name || 'Group'} 
+          leftIcon="arrow-left"
+          onLeftPress={() => navigation.goBack()}
+        />
+
+        <View style={styles.content}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.actionCards}>
+            <Card style={[styles.actionCard, { backgroundColor: theme.colors.primary }]}>
+              <ThemeText style={styles.actionTitle}>Total Expenses</ThemeText>
+              <ThemeText style={styles.actionAmount}>
+                ${(currentGroup.totalExpenses || 0).toFixed(2)}
+              </ThemeText>
+            </Card>
+// ... existing code ...
+```
+
+---
+
+_**Assistant**_
+
+Now, let's add the paid by member selection to the `AddExpenseForm`:
+
+---
+
+_**Assistant**_
+
+```
+import React, { useState } from 'react';
+import {
+  View,
+  StyleSheet,
+  TextInput,
+  ScrollView,
+  TouchableOpacity,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Modal,
+  FlatList,
+} from 'react-native';
+import { useDispatch, useSelector } from 'react-redux';
+import { AppDispatch, RootState } from '../redux/store';
+import { addExpense } from '../redux/expensesSlice';
+import { useTheme } from '../themes/ThemeProvider';
+import { ThemeText } from './ThemeText';
+import { CustomButton } from './CustomButton';
+import { Card } from './Card';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { SplitType } from '../types';
+
+interface Props {
+  groupId?: string;
+  participants: string[];
+  onSuccess?: () => void;
+  onCancel?: () => void;
+}
+
+export const AddExpenseForm: React.FC<Props> = ({
+  groupId,
+  participants,
+  onSuccess,
+  onCancel
+}) => {
+  const dispatch = useDispatch<AppDispatch>();
+  const { theme } = useTheme();
+  const user = useSelector((state: RootState) => state.auth.user);
+
+  const [description, setDescription] = useState('');
+  const [amount, setAmount] = useState('');
+  const [splitType, setSplitType] = useState<SplitType>('EQUAL');
+  const [customSplits, setCustomSplits] = useState<{ [key: string]: number }>({});
+  const [loading, setLoading] = useState(false);
+  const [showPaidByModal, setShowPaidByModal] = useState(false);
+  const [selectedPaidBy, setSelectedPaidBy] = useState(user?.id || '');
+
+  const splitTypes: { type: SplitType; label: string; icon: string }[] = [
+    { type: 'EQUAL', label: 'Split Equally', icon: 'equal' },
+    { type: 'EXACT', label: 'Split by Amount', icon: 'currency-usd' },
+    { type: 'PERCENTAGE', label: 'Split by Percentage', icon: 'percent' },
+  ];
+
+  const handleSubmit = async () => {
+    if (!description.trim()) {
+      Alert.alert('Error', 'Please enter a description');
+      return;
+    }
+
+    const numAmount = parseFloat(amount);
+    if (isNaN(numAmount) || numAmount <= 0) {
+      Alert.alert('Error', 'Please enter a valid amount');
+      return;
+    }
+
+    if (!selectedPaidBy) {
+      Alert.alert('Error', 'Please select who paid');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      
+      let splits;
+      if (splitType === 'EQUAL') {
+        const splitAmount = numAmount / participants.length;
+        splits = participants.map(userId => ({
+          userId,
+          amount: splitAmount,
+        }));
+      } else {
+        // Validate custom splits
+        const totalSplit = Object.values(customSplits).reduce((sum, value) => sum + value, 0);
+        if (splitType === 'PERCENTAGE' && Math.abs(totalSplit - 100) > 0.01) {
+          Alert.alert('Error', 'Percentages must add up to 100%');
+          return;
+        } else if (splitType === 'EXACT' && Math.abs(totalSplit - numAmount) > 0.01) {
+          Alert.alert('Error', 'Split amounts must add up to the total');
+          return;
+        }
+
+        splits = participants.map(userId => ({
+          userId,
+          amount: splitType === 'PERCENTAGE' 
+            ? (numAmount * (customSplits[userId] || 0)) / 100
+            : (customSplits[userId] || 0),
+        }));
+      }
+
+      await dispatch(addExpense({
+        description,
+        amount: numAmount,
+        paidBy: selectedPaidBy,
+        groupId,
+        splitType,
+        splits,
+      })).unwrap();
+
+      onSuccess?.();
+    } catch (error) {
+      Alert.alert('Error', 'Failed to add expense');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const renderSplitTypeSelector = () => (
+    <View style={styles.splitTypeContainer}>
+      {splitTypes.map(({ type, label, icon }) => (
+        <TouchableOpacity
+          key={type}
+          style={[
+            styles.splitTypeButton,
+            { backgroundColor: theme.colors.card },
+            splitType === type && { borderColor: theme.colors.primary }
+          ]}
+          onPress={() => setSplitType(type)}
+        >
+          <Icon name={icon} size={24} color={splitType === type ? theme.colors.primary : theme.colors.text} />
+          <ThemeText style={[styles.splitTypeLabel, splitType === type && { color: theme.colors.primary }]}>
+            {label}
+          </ThemeText>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+
+  const renderCustomSplits = () => (
+    <View style={styles.customSplitsContainer}>
+      <ThemeText variant="title" style={styles.sectionTitle}>
+        {splitType === 'EXACT' ? 'Enter Amounts' : 'Enter Percentages'}
+      </ThemeText>
+      {participants.map(userId => (
+        <View key={userId} style={styles.splitRow}>
+          <ThemeText style={styles.participantName}>
+            {userId === user?.id ? 'You' : userId}
+          </ThemeText>
+          <TextInput
+            style={[styles.splitInput, { color: theme.colors.text, borderColor: theme.colors.border }]}
+            keyboardType="decimal-pad"
+            value={customSplits[userId]?.toString() || ''}
+            onChangeText={(value) => {
+              const numValue = parseFloat(value || '0');
+              setCustomSplits(prev => ({
+                ...prev,
+                [userId]: numValue
+              }));
+            }}
+            placeholder={splitType === 'EXACT' ? '0.00' : '0%'}
+            placeholderTextColor={theme.colors.placeholder}
+          />
+        </View>
+      ))}
+    </View>
+  );
+
+  const renderPaidByModal = () => (
+    <Modal
+      visible={showPaidByModal}
+      transparent
+      animationType="fade"
+      onRequestClose={() => setShowPaidByModal(false)}
+    >
+      <TouchableOpacity 
+        style={styles.modalOverlay} 
+        activeOpacity={1} 
+        onPress={() => setShowPaidByModal(false)}
+      >
+        <View style={[styles.modalContent, { backgroundColor: theme.colors.card }]}>
+          <ThemeText variant="title" style={styles.modalTitle}>Who paid?</ThemeText>
+          <FlatList
+            data={participants}
+            keyExtractor={item => item}
+            renderItem={({ item: userId }) => (
+              <TouchableOpacity
+                style={[
+                  styles.paidByOption,
+                  selectedPaidBy === userId && { backgroundColor: theme.colors.primary + '20' }
+                ]}
+                onPress={() => {
+                  setSelectedPaidBy(userId);
+                  setShowPaidByModal(false);
+                }}
+              >
+                <View style={styles.paidByInfo}>
+                  <Icon 
+                    name="account" 
+                    size={24} 
+                    color={selectedPaidBy === userId ? theme.colors.primary : theme.colors.text} 
+                  />
+                  <ThemeText style={[
+                    styles.paidByName,
+                    selectedPaidBy === userId && { color: theme.colors.primary }
+                  ]}>
+                    {userId === user?.id ? 'You' : userId}
+                  </ThemeText>
+                </View>
+                {selectedPaidBy === userId && (
+                  <Icon name="check" size={24} color={theme.colors.primary} />
+                )}
+              </TouchableOpacity>
+            )}
+          />
+        </View>
+      </TouchableOpacity>
+    </Modal>
+  );
+
+  return (
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={styles.container}
+    >
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        <View style={styles.formGroup}>
+          <ThemeText variant="title" style={styles.label}>Description</ThemeText>
+          <TextInput
+            style={[styles.input, { color: theme.colors.text, borderColor: theme.colors.border }]}
+            value={description}
+            onChangeText={setDescription}
+            placeholder="What's this for?"
+            placeholderTextColor={theme.colors.placeholder}
+          />
+        </View>
+
+        <View style={styles.formGroup}>
+          <ThemeText variant="title" style={styles.label}>Amount</ThemeText>
+          <TextInput
+            style={[styles.input, { color: theme.colors.text, borderColor: theme.colors.border }]}
+            value={amount}
+            onChangeText={setAmount}
+            keyboardType="decimal-pad"
+            placeholder="0.00"
+            placeholderTextColor={theme.colors.placeholder}
+          />
+        </View>
+
+        <View style={styles.formGroup}>
+          <ThemeText variant="title" style={styles.label}>Paid by</ThemeText>
+          <TouchableOpacity
+            style={[styles.paidBySelector, { borderColor: theme.colors.border }]}
+            onPress={() => setShowPaidByModal(true)}
+          >
+            <View style={styles.paidByContent}>
+              <Icon name="account" size={24} color={theme.colors.text} />
+              <ThemeText style={styles.paidByText}>
+                {selectedPaidBy === user?.id ? 'You' : selectedPaidBy || 'Select who paid'}
+              </ThemeText>
+            </View>
+            <Icon name="chevron-down" size={24} color={theme.colors.text} />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.formGroup}>
+          <ThemeText variant="title" style={styles.label}>Split Type</ThemeText>
+          {renderSplitTypeSelector()}
+        </View>
+
+        {splitType !== 'EQUAL' && renderCustomSplits()}
+
+        <CustomButton
+          title="Add Expense"
+          onPress={handleSubmit}
+          loading={loading}
+          style={styles.submitButton}
+        />
+      </ScrollView>
+      {renderPaidByModal()}
+    </KeyboardAvoidingView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 16,
+  },
+  formGroup: {
+    marginBottom: 24,
+  },
+  label: {
+    marginBottom: 8,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  input: {
+    height: 48,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    fontSize: 16,
+  },
+  splitTypeContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  splitTypeButton: {
+    flex: 1,
+    marginHorizontal: 4,
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  splitTypeLabel: {
+    marginTop: 4,
+    fontSize: 12,
+    textAlign: 'center',
+  },
+  customSplitsContainer: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    marginBottom: 16,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  splitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  participantName: {
+    flex: 1,
+    marginRight: 16,
+  },
+  splitInput: {
+    width: 100,
+    height: 40,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    textAlign: 'right',
+  },
+  submitButton: {
+    marginTop: 8,
+  },
+  paidBySelector: {
+    height: 48,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  paidByContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  paidByText: {
+    marginLeft: 12,
+    fontSize: 16,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    width: '80%',
+    maxHeight: '70%',
+    borderRadius: 12,
+    padding: 16,
+  },
+  modalTitle: {
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  paidByOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  paidByInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  paidByName: {
+    marginLeft: 12,
+    fontSize: 16,
+  },
+});
+
+export default AddExpenseForm;
+```
+
+---
+
+_**Assistant**_
+
+Let me check the `AddExpenseParams` type to fix the linter error:
+
+---
+
+_**Assistant**_
+
+
+
+---
+
+_**Assistant**_
+
+Let me update the `AddExpenseForm` component to fix the remaining issues:
+
+---
+
+_**Assistant**_
+
+```
+import React, { useState } from 'react';
+import {
+  View,
+  StyleSheet,
+  TextInput,
+  ScrollView,
+  TouchableOpacity,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Modal,
+  FlatList,
+} from 'react-native';
+import { useDispatch, useSelector } from 'react-redux';
+import { AppDispatch, RootState } from '../redux/store';
+import { addExpense } from '../redux/expensesSlice';
+import { useTheme } from '../themes/ThemeProvider';
+import { ThemeText } from './ThemeText';
+import { CustomButton } from './CustomButton';
+import { Card } from './Card';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { SplitType, Split } from '../types';
+
+interface Props {
+  groupId?: string;
+  participants: string[];
+  onSuccess?: () => void;
+  onCancel?: () => void;
+}
+
+export const AddExpenseForm: React.FC<Props> = ({
+  groupId,
+  participants,
+  onSuccess,
+  onCancel
+}) => {
+  const dispatch = useDispatch<AppDispatch>();
+  const { theme } = useTheme();
+  const user = useSelector((state: RootState) => state.auth.user);
+
+  const [description, setDescription] = useState('');
+  const [amount, setAmount] = useState('');
+  const [splitType, setSplitType] = useState<SplitType>('EQUAL');
+  const [customSplits, setCustomSplits] = useState<{ [key: string]: number }>({});
+  const [loading, setLoading] = useState(false);
+  const [showPaidByModal, setShowPaidByModal] = useState(false);
+  const [selectedPaidBy, setSelectedPaidBy] = useState(user?.id || '');
+
+  const splitTypes: { type: SplitType; label: string; icon: string }[] = [
+    { type: 'EQUAL', label: 'Split Equally', icon: 'equal' },
+    { type: 'EXACT', label: 'Split by Amount', icon: 'currency-usd' },
+    { type: 'PERCENTAGE', label: 'Split by Percentage', icon: 'percent' },
+  ];
+
+  const handleSubmit = async () => {
+    if (!description.trim()) {
+      Alert.alert('Error', 'Please enter a description');
+      return;
+    }
+
+    const numAmount = parseFloat(amount);
+    if (isNaN(numAmount) || numAmount <= 0) {
+      Alert.alert('Error', 'Please enter a valid amount');
+      return;
+    }
+
+    if (!selectedPaidBy) {
+      Alert.alert('Error', 'Please select who paid');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      
+      let splits: Split[];
+      if (splitType === 'EQUAL') {
+        const splitAmount = numAmount / participants.length;
+        splits = participants.map(userId => ({
+          userId,
+          amount: splitAmount,
+        }));
+      } else {
+        // Validate custom splits
+        const totalSplit = Object.values(customSplits).reduce((sum, value) => sum + value, 0);
+        if (splitType === 'PERCENTAGE' && Math.abs(totalSplit - 100) > 0.01) {
+          Alert.alert('Error', 'Percentages must add up to 100%');
+          return;
+        } else if (splitType === 'EXACT' && Math.abs(totalSplit - numAmount) > 0.01) {
+          Alert.alert('Error', 'Split amounts must add up to the total');
+          return;
+        }
+
+        splits = participants.map(userId => ({
+          userId,
+          amount: splitType === 'PERCENTAGE' 
+            ? (numAmount * (customSplits[userId] || 0)) / 100
+            : (customSplits[userId] || 0),
+        }));
+      }
+
+      await dispatch(addExpense({
+        description,
+        amount: numAmount,
+        paidBy: selectedPaidBy,
+        groupId,
+        splitType,
+        participants,
+        splits,
+      })).unwrap();
+
+      onSuccess?.();
+      setDescription('');
+      setAmount('');
+      setSplitType('EQUAL');
+      setCustomSplits({});
+      setSelectedPaidBy(user?.id || '');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to add expense');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const renderSplitTypeSelector = () => (
+    <View style={styles.splitTypeContainer}>
+      {splitTypes.map(({ type, label, icon }) => (
+        <TouchableOpacity
+          key={type}
+          style={[
+            styles.splitTypeButton,
+            { backgroundColor: theme.colors.card },
+            splitType === type && { borderColor: theme.colors.primary }
+          ]}
+          onPress={() => setSplitType(type)}
+        >
+          <Icon name={icon} size={24} color={splitType === type ? theme.colors.primary : theme.colors.text} />
+          <ThemeText style={[styles.splitTypeLabel, splitType === type && { color: theme.colors.primary }]}>
+            {label}
+          </ThemeText>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+
+  const renderCustomSplits = () => (
+    <View style={styles.customSplitsContainer}>
+      <ThemeText variant="title" style={styles.sectionTitle}>
+        {splitType === 'EXACT' ? 'Enter Amounts' : 'Enter Percentages'}
+      </ThemeText>
+      {participants.map(userId => (
+        <View key={userId} style={styles.splitRow}>
+          <ThemeText style={styles.participantName}>
+            {userId === user?.id ? 'You' : userId}
+          </ThemeText>
+          <TextInput
+            style={[styles.splitInput, { color: theme.colors.text, borderColor: theme.colors.border }]}
+            keyboardType="decimal-pad"
+            value={customSplits[userId]?.toString() || ''}
+            onChangeText={(value) => {
+              const numValue = parseFloat(value || '0');
+              setCustomSplits(prev => ({
+                ...prev,
+                [userId]: numValue
+              }));
+            }}
+            placeholder={splitType === 'EXACT' ? '0.00' : '0%'}
+            placeholderTextColor={theme.colors.placeholder}
+          />
+        </View>
+      ))}
+    </View>
+  );
+
+  const renderPaidByModal = () => (
+    <Modal
+      visible={showPaidByModal}
+      transparent
+      animationType="fade"
+      onRequestClose={() => setShowPaidByModal(false)}
+    >
+      <TouchableOpacity 
+        style={styles.modalOverlay} 
+        activeOpacity={1} 
+        onPress={() => setShowPaidByModal(false)}
+      >
+        <View style={[styles.modalContent, { backgroundColor: theme.colors.card }]}>
+          <ThemeText variant="title" style={styles.modalTitle}>Who paid?</ThemeText>
+          <FlatList
+            data={participants}
+            keyExtractor={item => item}
+            renderItem={({ item: userId }) => (
+              <TouchableOpacity
+                style={[
+                  styles.paidByOption,
+                  selectedPaidBy === userId && { backgroundColor: theme.colors.primary + '20' }
+                ]}
+                onPress={() => {
+                  setSelectedPaidBy(userId);
+                  setShowPaidByModal(false);
+                }}
+              >
+                <View style={styles.paidByInfo}>
+                  <Icon 
+                    name="account" 
+                    size={24} 
+                    color={selectedPaidBy === userId ? theme.colors.primary : theme.colors.text} 
+                  />
+                  <ThemeText style={[
+                    styles.paidByName,
+                    selectedPaidBy === userId && { color: theme.colors.primary }
+                  ]}>
+                    {userId === user?.id ? 'You' : userId}
+                  </ThemeText>
+                </View>
+                {selectedPaidBy === userId && (
+                  <Icon name="check" size={24} color={theme.colors.primary} />
+                )}
+              </TouchableOpacity>
+            )}
+          />
+        </View>
+      </TouchableOpacity>
+    </Modal>
+  );
+
+  return (
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={styles.container}
+    >
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        <View style={styles.formGroup}>
+          <ThemeText variant="title" style={styles.label}>Description</ThemeText>
+          <TextInput
+            style={[styles.input, { color: theme.colors.text, borderColor: theme.colors.border }]}
+            value={description}
+            onChangeText={setDescription}
+            placeholder="What's this for?"
+            placeholderTextColor={theme.colors.placeholder}
+          />
+        </View>
+
+        <View style={styles.formGroup}>
+          <ThemeText variant="title" style={styles.label}>Amount</ThemeText>
+          <TextInput
+            style={[styles.input, { color: theme.colors.text, borderColor: theme.colors.border }]}
+            value={amount}
+            onChangeText={setAmount}
+            keyboardType="decimal-pad"
+            placeholder="0.00"
+            placeholderTextColor={theme.colors.placeholder}
+          />
+        </View>
+
+        <View style={styles.formGroup}>
+          <ThemeText variant="title" style={styles.label}>Paid by</ThemeText>
+          <TouchableOpacity
+            style={[styles.paidBySelector, { borderColor: theme.colors.border }]}
+            onPress={() => setShowPaidByModal(true)}
+          >
+            <View style={styles.paidByContent}>
+              <Icon name="account" size={24} color={theme.colors.text} />
+              <ThemeText style={styles.paidByText}>
+                {selectedPaidBy === user?.id ? 'You' : selectedPaidBy || 'Select who paid'}
+              </ThemeText>
+            </View>
+            <Icon name="chevron-down" size={24} color={theme.colors.text} />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.formGroup}>
+          <ThemeText variant="title" style={styles.label}>Split Type</ThemeText>
+          {renderSplitTypeSelector()}
+        </View>
+
+        {splitType !== 'EQUAL' && renderCustomSplits()}
+
+        <View style={styles.buttonContainer}>
+          {onCancel && (
+            <CustomButton
+              title="Cancel"
+              onPress={onCancel}
+              variant="outline"
+              style={styles.cancelButton}
+            />
+          )}
+          <CustomButton
+            title="Add Expense"
+            onPress={handleSubmit}
+            loading={loading}
+            style={[styles.submitButton, onCancel && styles.submitButtonWithCancel]}
+          />
+        </View>
+      </ScrollView>
+      {renderPaidByModal()}
+    </KeyboardAvoidingView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 16,
+  },
+  formGroup: {
+    marginBottom: 24,
+  },
+  label: {
+    marginBottom: 8,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  input: {
+    height: 48,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    fontSize: 16,
+  },
+  splitTypeContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  splitTypeButton: {
+    flex: 1,
+    marginHorizontal: 4,
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  splitTypeLabel: {
+    marginTop: 4,
+    fontSize: 12,
+    textAlign: 'center',
+  },
+  customSplitsContainer: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    marginBottom: 16,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  splitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  participantName: {
+    flex: 1,
+    marginRight: 16,
+  },
+  splitInput: {
+    width: 100,
+    height: 40,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    textAlign: 'right',
+  },
+  buttonContainer: {
+    flexDirection: 'row',
+    marginTop: 8,
+  },
+  submitButton: {
+    flex: 1,
+  },
+  cancelButton: {
+    flex: 1,
+    marginRight: 8,
+  },
+  submitButtonWithCancel: {
+    flex: 1,
+  },
+  paidBySelector: {
+    height: 48,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  paidByContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  paidByText: {
+    marginLeft: 12,
+    fontSize: 16,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    width: '80%',
+    maxHeight: '70%',
+    borderRadius: 12,
+    padding: 16,
+  },
+  modalTitle: {
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  paidByOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  paidByInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  paidByName: {
+    marginLeft: 12,
+    fontSize: 16,
+  },
+});
+```
+
+---
+
+_**Assistant**_
+
+Let me fix the remaining linter errors:
+
+---
+
+_**Assistant**_
+
+```
+interface AddExpenseParams {
+  description: string;
+  amount: number;
+  paidBy: string;
+  groupId?: string;
+  splitType: SplitType;
+  participants: string[];
+  splits: Split[];
+}
+
+// Add a new expense
+export const addExpense = createAsyncThunk(
+  'expenses/addExpense',
+  async (params: AddExpenseParams) => {
+    const expenseData: Omit<Expense, 'id'> = {
+      description: params.description,
+      amount: params.amount,
+      paidBy: params.paidBy,
+      groupId: params.groupId,
+      splitType: params.splitType,
+      splits: params.splits,
+      participants: params.participants,
+      createdAt: new Date(),
+    };
+
+    const db = firestore();
+    const batch = db.batch();
+
+    // Create expense document
+    const expenseRef = db.collection('expenses').doc();
+    batch.set(expenseRef, expenseData);
+
+    // Update group balances if it's a group expense
+    if (params.groupId) {
+      const groupRef = db.collection('groups').doc(params.groupId);
+      const groupDoc = await groupRef.get();
+      const groupData = groupDoc.data();
+
+      if (groupData) {
+        // Get all group expenses
+        const expensesSnapshot = await db
+          .collection('expenses')
+          .where('groupId', '==', params.groupId)
+          .get();
+
+        const allExpenses = [
+          ...expensesSnapshot.docs.map(doc => ({ 
+            id: doc.id, 
+            ...doc.data() 
+          } as Expense)),
+          { id: expenseRef.id, ...expenseData }
+        ];
+        
+        const balances = calculateBalances(allExpenses, groupData.members);
+        const simplifiedDebts = simplifyDebts(balances);
+
+        batch.update(groupRef, {
+          balances,
+          simplifiedDebts,
+          totalExpenses: firestore.FieldValue.increment(params.amount)
+        });
+      }
+    }
+
+    await batch.commit();
+    return { id: expenseRef.id, ...expenseData } as Expense;
+  }
+);
+```
+
+---
+
+_**Assistant**_
+
+Now let me fix the style issue in the `AddExpenseForm`:
+
+---
+
+_**Assistant**_
+
+```
+// ... existing code ...
+            <CustomButton
+              title="Add Expense"
+              onPress={handleSubmit}
+              loading={loading}
+              style={onCancel ? [styles.submitButton, styles.submitButtonWithCancel] : styles.submitButton}
+            />
+// ... existing code ...
+```
+
+---
+
+_**Assistant**_
+
+Let me try a different approach to fix the style issue:
+
+---
+
+_**Assistant**_
+
+```
+// ... existing code ...
+            <CustomButton
+              title="Add Expense"
+              onPress={handleSubmit}
+              loading={loading}
+              style={{
+                flex: 1,
+                ...(onCancel && { marginLeft: 8 })
+              }}
+            />
+// ... existing code ...
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 16,
+  },
+  formGroup: {
+    marginBottom: 24,
+  },
+  label: {
+    marginBottom: 8,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  input: {
+    height: 48,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    fontSize: 16,
+  },
+  splitTypeContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  splitTypeButton: {
+    flex: 1,
+    marginHorizontal: 4,
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  splitTypeLabel: {
+    marginTop: 4,
+    fontSize: 12,
+    textAlign: 'center',
+  },
+  customSplitsContainer: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    marginBottom: 16,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  splitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  participantName: {
+    flex: 1,
+    marginRight: 16,
+  },
+  splitInput: {
+    width: 100,
+    height: 40,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    textAlign: 'right',
+  },
+  buttonContainer: {
+    flexDirection: 'row',
+    marginTop: 8,
+  },
+  cancelButton: {
+    flex: 1,
+  },
+  paidBySelector: {
+    height: 48,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  paidByContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  paidByText: {
+    marginLeft: 12,
+    fontSize: 16,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    width: '80%',
+    maxHeight: '70%',
+    borderRadius: 12,
+    padding: 16,
+  },
+  modalTitle: {
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  paidByOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  paidByInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  paidByName: {
+    marginLeft: 12,
+    fontSize: 16,
+  },
+});
+```
+
+---
+
+_**Assistant**_
+
+Great! I've made several improvements to the expense management feature:
+
+1. Added a paid by member selection:
+   - Users can now select who paid for the expense from the group members
+   - Shows a modal with a list of participants
+   - Clearly indicates the selected payer with a checkmark
+   - Displays "You" for the current user
+
+2. Fixed type issues:
+   - Updated the `AddExpenseParams` interface to include the `splits` property
+   - Added proper typing for the `Split` interface
+   - Fixed style type issues in the `AddExpenseForm` component
+
+3. Improved the UI:
+   - Added a cancel button when needed
+   - Better button layout with proper spacing
+   - Clear visual feedback for the selected payer
+   - Improved validation messages
+
+4. Fixed the error in `GroupDetailScreen` by:
+   - Adding null checks for `currentGroup` properties
+   - Using default values for undefined properties
+   - Properly handling optional fields
+
+The expense form now has a complete flow:
+1. Enter description and amount
+2. Select who paid
+3. Choose split type (Equal, Exact, or Percentage)
+4. Enter custom splits if needed
+5. Submit or cancel
+
+Would you like me to make any additional improvements to the expense management feature?
+
+---
+
+_**User**_
+
+- Recent Expenses are not display on group detail screen, its only after added when app reload Recent Expenses  not display
+-  In Group member screen owes ammount not display correctly.
+
+---
+
+_**Assistant**_
+
+Let me help you fix these issues. Let's address them one by one:
+
+1. First, let's fix the Recent Expenses not displaying immediately after adding:
+The issue is likely because we're not refreshing the expenses list after adding a new expense. Let's modify the `GroupDetailScreen` to fetch expenses after a successful expense addition.
+
+I'll edit the `GroupDetailScreen.tsx` file:
+
+---
+
+_**Assistant**_
+
+```
+// ... existing code ...
+          <AddExpenseForm
+            groupId={groupId}
+            participants={currentGroup?.members || []}
+            onSuccess={() => {
+              setShowAddExpense(false);
+              dispatch(fetchExpenses(groupId));
+              Alert.alert('Success', 'Expense added successfully');
+            }}
+            onCancel={() => setShowAddExpense(false)}
+          />
+// ... existing code ...
+  useEffect(() => {
+    if (groupId) {
+      dispatch(fetchGroupById(groupId));
+      dispatch(fetchExpenses(groupId));
+    }
+  }, [dispatch, groupId, expenses.length]);
+// ... existing code ...
+```
+
+---
+
+_**Assistant**_
+
+2. For the incorrect group member balances, let's check the balance calculation in the `addExpense` thunk and the member display logic:
+
+---
+
+_**Assistant**_
+
+```
+// ... existing code ...
+export const addExpense = createAsyncThunk(
+  'expenses/addExpense',
+  async (params: AddExpenseParams) => {
+    const expenseData: Omit<Expense, 'id'> = {
+      description: params.description,
+      amount: params.amount,
+      paidBy: params.paidBy,
+      groupId: params.groupId || null,
+      splitType: params.splitType,
+      splits: params.splits,
+      participants: params.participants,
+      createdAt: new Date(),
+    };
+
+    const db = firestore();
+    const batch = db.batch();
+
+    // Create expense document
+    const expenseRef = db.collection('expenses').doc();
+    batch.set(expenseRef, expenseData);
+
+    // Update group balances if it's a group expense
+    if (params.groupId) {
+      const groupRef = db.collection('groups').doc(params.groupId);
+      const groupDoc = await groupRef.get();
+      const groupData = groupDoc.data();
+
+      if (groupData) {
+        // Get all group expenses including the new one
+        const expensesSnapshot = await db
+          .collection('expenses')
+          .where('groupId', '==', params.groupId)
+          .get();
+
+        const allExpenses = [
+          ...expensesSnapshot.docs.map(doc => ({ 
+            id: doc.id, 
+            ...doc.data(),
+            createdAt: doc.data().createdAt?.toDate(),
+          } as Expense)),
+          { id: expenseRef.id, ...expenseData }
+        ];
+
+        // Calculate new balances
+        const balances = calculateBalances(allExpenses, params.participants);
+        const simplifiedDebts = simplifyDebts(balances);
+
+        // Update group with new balances and total
+        batch.update(groupRef, {
+          balances: balances.map(b => ({
+            userId: b.userId,
+            amount: Number(b.amount.toFixed(2))
+          })),
+          simplifiedDebts: simplifiedDebts.map(d => ({
+            from: d.from,
+            to: d.to,
+            amount: Number(d.amount.toFixed(2))
+          })),
+          totalExpenses: firestore.FieldValue.increment(params.amount)
+        });
+      }
+    }
+
+    await batch.commit();
+    return { id: expenseRef.id, ...expenseData } as Expense;
+  }
+);
+// ... existing code ...
+```
+
+---
+
+_**Assistant**_
+
+Let me fix the linter error and update the member display in `GroupDetailScreen`:
+
+---
+
+_**Assistant**_
+
+```
+// ... existing code ...
+  const renderMemberItem = ({ item: memberId }: { item: string }) => {
+    const balances = currentGroup?.balances || [];
+    const balance = balances.find(b => b.userId === memberId);
+    const isCurrentUser = memberId === user?.id;
+    const balanceAmount = balance?.amount || 0;
+    const balanceColor = balanceAmount > 0 ? theme.colors.success : 
+                        balanceAmount < 0 ? theme.colors.error : 
+                        theme.colors.text;
+
+    return (
+      <Card style={styles.memberCard}>
+        <View style={styles.memberInfo}>
+          <Icon name="account" size={24} color={theme.colors.text} />
+          <ThemeText style={styles.memberName}>
+            {isCurrentUser ? 'You' : memberId}
+          </ThemeText>
+        </View>
+        <ThemeText style={[styles.memberBalance, { color: balanceColor }]}>
+          {balanceAmount === 0 ? 'All settled' :
+           balanceAmount > 0 ? `Gets back $${balanceAmount.toFixed(2)}` :
+           `Owes $${Math.abs(balanceAmount).toFixed(2)}`}
+        </ThemeText>
+      </Card>
+    );
+  };
+// ... existing code ...
+```
+
+---
+
+_**Assistant**_
+
+Now let's fix the linter error in the `expensesSlice.ts`:
+
+---
+
+_**Assistant**_
+
+```
+// ... existing code ...
+interface AddExpenseParams {
+  description: string;
+  amount: number;
+  paidBy: string;
+  groupId?: string | null;
+  splitType: SplitType;
+  participants: string[];
+  splits: Split[];
+}
+
+export const addExpense = createAsyncThunk(
+  'expenses/addExpense',
+  async (params: AddExpenseParams) => {
+    const expenseData: Omit<Expense, 'id'> = {
+      description: params.description,
+      amount: params.amount,
+      paidBy: params.paidBy,
+      groupId: params.groupId || undefined,
+      splitType: params.splitType,
+      splits: params.splits,
+      participants: params.participants,
+      createdAt: new Date(),
+    };
+// ... existing code ...
+```
+
+---
+
+_**Assistant**_
+
+These changes should fix both issues:
+
+1. Recent Expenses not displaying:
+   - Added `expenses.length` to the `useEffect` dependencies to trigger a refresh when expenses change
+   - Added `fetchExpenses` call in the `onSuccess` callback of `AddExpenseForm`
+
+2. Incorrect group member balances:
+   - Updated the balance calculation in `addExpense` thunk to use proper type conversion and rounding
+   - Improved the member balance display format in `GroupDetailScreen`
+   - Fixed type issues with `groupId` to properly handle null/undefined values
+   - Added proper number formatting for balances
+
+The improvements include:
+- Better balance display formatting ("Gets back $X" / "Owes $X" / "All settled")
+- Proper rounding of numbers to 2 decimal places
+- Immediate refresh of expenses after adding a new one
+- Fixed type issues that could cause inconsistencies
+
+Would you like me to make any additional improvements or clarify any of the changes?
+
+---
+
+_**User**_
+
+all split feature not working as i expected. the split feature same below example:
+splitting the cost equally among members, 
+- Calculate and display simplified debts between members (e.g., B owes A $10, C owes A $30, C owes B $20) based on multiple expenses.
+   - Example scenario: Alice pays $90 for gas (split equally), Bob pays $60 for food (split equally), simplify debts accordingly. and vice versa 
+
+---
+
+_**Assistant**_
+
+I'll help you fix the split feature to work correctly according to your example. Let's look at the debt simplification logic and make sure it's calculating the splits correctly.
+
+First, let me check the debt simplification utility:
+
+---
+
+_**Assistant**_
+
+
+
+---
+
+_**Assistant**_
+
+Let me explain what's happening and fix the issue:
+
+1. The current implementation has the right structure but needs some adjustments to handle your example scenario correctly.
+2. Let's modify the `calculateBalances` and `simplifyDebts` functions to better handle the split calculations.
+
+Let me update the debt simplification logic:
+
+---
+
+_**Assistant**_
+
+```
 undefined
 ```
 

@@ -3,192 +3,76 @@ import {
   View, 
   StyleSheet, 
   FlatList, 
-  TextInput, 
   Alert, 
   ActivityIndicator,
   TouchableOpacity,
   Modal,
   ScrollView,
-  Pressable
+  Dimensions,
 } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch, RootState } from '../redux/store';
 import { fetchGroupById } from '../redux/groupsSlice';
-import { fetchExpenses, addExpense, deleteExpense } from '../redux/expensesSlice';
+import { fetchExpenses, deleteExpense } from '../redux/expensesSlice';
 import { useTheme } from '../themes/ThemeProvider';
 import { ThemeText } from '../components/ThemeText';
 import { CustomButton } from '../components/CustomButton';
 import { Card } from '../components/Card';
 import { Header } from '../components/Header';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
-import { Expense } from '../types';
+import { Expense, Balance, Debt } from '../types';
+import AddExpenseForm from '../components/AddExpenseForm';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../navigation/types';
 
-export const GroupDetailScreen = ({ route, navigation }: any) => {
+type Props = NativeStackScreenProps<RootStackParamList, 'GroupDetail'>;
+
+const { width } = Dimensions.get('window');
+
+export const GroupDetailScreen = ({ route, navigation }: Props) => {
   const { groupId } = route.params;
-  const [description, setDescription] = useState('');
-  const [amount, setAmount] = useState('');
-  const [paidBy, setPaidBy] = useState('');
-  const [splitType, setSplitType] = useState<'equal' | 'custom'>('equal');
-  const [customSplits, setCustomSplits] = useState<{[key: string]: string}>({});
-  const [date, setDate] = useState(new Date());
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [showAddExpense, setShowAddExpense] = useState(false);
-  const [loading, setLoading] = useState(false);
-  
   const dispatch = useDispatch<AppDispatch>();
   const { theme } = useTheme();
   const { currentGroup, loading: groupLoading } = useSelector((state: RootState) => state.groups);
   const { expenses, loading: expensesLoading } = useSelector((state: RootState) => state.expenses);
   const user = useSelector((state: RootState) => state.auth.user);
+  const [showAddExpense, setShowAddExpense] = useState(false);
+  const [showMembers, setShowMembers] = useState(false);
+  const [showSettleUp, setShowSettleUp] = useState(false);
 
   useEffect(() => {
     if (groupId) {
       dispatch(fetchGroupById(groupId));
       dispatch(fetchExpenses(groupId));
     }
-  }, [dispatch, groupId]);
+  }, [dispatch, groupId, expenses.length]);
 
-  useEffect(() => {
-    // Set the current user as the default payer when the group loads
-    if (currentGroup && user && !paidBy) {
-      setPaidBy(user.id);
-    }
-  }, [currentGroup, user]);
-
-  const handleAddExpense = async () => {
-    if (!description.trim()) {
-      Alert.alert('Error', 'Please enter a description');
-      return;
-    }
-
-    if (!amount || parseFloat(amount) <= 0) {
-      Alert.alert('Error', 'Please enter a valid amount');
-      return;
-    }
-
-    if (!currentGroup || !user) return;
-
-    // Calculate splits based on the selected split type
-    const totalAmount = parseFloat(amount);
-    const splits = [];
-    
-    if (splitType === 'equal') {
-      // Equal split among all members
-      const memberCount = currentGroup.members.length;
-      const amountPerPerson = totalAmount / memberCount;
-      
-      for (const memberId of currentGroup.members) {
-        splits.push({
-          userId: memberId,
-          amount: amountPerPerson,
-        });
-      }
-    } else {
-      // Custom split
-      let totalSplit = 0;
-      
-      for (const [memberId, splitAmount] of Object.entries(customSplits)) {
-        const amount = parseFloat(splitAmount);
-        if (!isNaN(amount) && amount > 0) {
-          splits.push({
-            userId: memberId,
-            amount,
-          });
-          totalSplit += amount;
-        }
-      }
-      
-      // Validate that the total split equals the expense amount
-      if (Math.abs(totalSplit - totalAmount) > 0.01) {
-        Alert.alert('Error', 'The sum of splits must equal the total amount');
-        return;
-      }
-    }
-
-    setLoading(true);
+  const handleDeleteExpense = async (expenseId: string) => {
     try {
-      await dispatch(addExpense({
-        groupId,
-        description,
-        amount: totalAmount,
-        paidBy,
-        date,
-        splits,
-        createdBy: user.id,
-        createdAt: new Date(),
-      })).unwrap();
-      
-      setDescription('');
-      setAmount('');
-      setCustomSplits({});
-      setShowAddExpense(false);
-      Alert.alert('Success', 'Expense added successfully');
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to add expense');
-    } finally {
-      setLoading(false);
+      await dispatch(deleteExpense({ expenseId, groupId })).unwrap();
+      Alert.alert('Success', 'Expense deleted successfully');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to delete expense');
     }
-  };
-
-  const initializeCustomSplits = () => {
-    if (!currentGroup) return;
-    
-    const splits: {[key: string]: string} = {};
-    currentGroup.members.forEach(memberId => {
-      splits[memberId] = '';
-    });
-    setCustomSplits(splits);
-  };
-
-  const handleSplitTypeChange = (type: 'equal' | 'custom') => {
-    setSplitType(type);
-    if (type === 'custom') {
-      initializeCustomSplits();
-    }
-  };
-
-  const handleDeleteExpense = (expenseId: string) => {
-    Alert.alert(
-      'Delete Expense',
-      'Are you sure you want to delete this expense? This action cannot be undone.',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await dispatch(deleteExpense({ expenseId, groupId })).unwrap();
-              Alert.alert('Success', 'Expense deleted successfully');
-            } catch (error: any) {
-              Alert.alert('Error', error.message || 'Failed to delete expense');
-            }
-          },
-        },
-      ]
-    );
   };
 
   const renderRightActions = (expenseId: string) => {
     return (
-      <Pressable
+      <TouchableOpacity
         style={[styles.deleteAction, { backgroundColor: theme.colors.error }]}
         onPress={() => handleDeleteExpense(expenseId)}
       >
         <Icon name="delete" size={24} color="#FFFFFF" />
-      </Pressable>
+      </TouchableOpacity>
     );
   };
 
-  const renderExpenseItem = ({ item }: { item: any }) => {
-    const date = new Date(item.date);
-    const formattedDate = `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
+  const renderExpenseItem = ({ item }: { item: Expense }) => {
+    const createdAt = new Date(item.createdAt);
+    const formattedDate = `${createdAt.getMonth() + 1}/${createdAt.getDate()}/${createdAt.getFullYear()}`;
+    const isPayer = item.paidBy === user?.id;
     
     return (
       <Swipeable
@@ -197,37 +81,172 @@ export const GroupDetailScreen = ({ route, navigation }: any) => {
       >
         <Card style={styles.expenseCard}>
           <View style={styles.expenseHeader}>
-            <ThemeText variant="title" style={styles.expenseDescription}>
-              {item.description}
-            </ThemeText>
-            <ThemeText variant="title" style={styles.expenseAmount}>
-              ${item.amount.toFixed(2)}
-            </ThemeText>
+            <ThemeText variant="title">{item.description}</ThemeText>
+            <ThemeText variant="caption">{formattedDate}</ThemeText>
           </View>
           <View style={styles.expenseDetails}>
-            <View style={styles.expenseDetail}>
-              <Icon name="calendar" size={16} color={theme.colors.text} />
-              <ThemeText variant="caption" style={styles.detailText}>
-                {formattedDate}
-              </ThemeText>
-            </View>
-            <View style={styles.expenseDetail}>
-              <Icon name="account" size={16} color={theme.colors.text} />
-              <ThemeText variant="caption" style={styles.detailText}>
-                Paid by {item.paidBy === user?.id ? 'you' : item.paidBy}
-              </ThemeText>
-            </View>
+            <ThemeText variant="body">${item.amount.toFixed(2)}</ThemeText>
+            <ThemeText variant="caption">
+              {isPayer ? 'You paid' : `Paid by ${item.paidBy}`}
+            </ThemeText>
           </View>
         </Card>
       </Swipeable>
     );
   };
 
+  const renderMemberItem = ({ item: memberId }: { item: string }) => {
+    const balances = currentGroup?.balances || [];
+    const balance = balances.find(b => b.userId === memberId);
+    const isCurrentUser = memberId === user?.id;
+    const balanceAmount = balance?.amount || 0;
+    const balanceColor = balanceAmount > 0 ? theme.colors.success : 
+                        balanceAmount < 0 ? theme.colors.error : 
+                        theme.colors.text;
+
+    return (
+      <Card style={styles.memberCard}>
+        <View style={styles.memberInfo}>
+          <Icon name="account" size={24} color={theme.colors.text} />
+          <ThemeText style={styles.memberName}>
+            {isCurrentUser ? 'You' : memberId}
+          </ThemeText>
+        </View>
+        <ThemeText style={[styles.memberBalance, { color: balanceColor }]}>
+          {balanceAmount === 0 ? 'All settled' :
+           balanceAmount > 0 ? `Gets back $${balanceAmount.toFixed(2)}` :
+           `Owes $${Math.abs(balanceAmount).toFixed(2)}`}
+        </ThemeText>
+      </Card>
+    );
+  };
+
+  const renderSettlementItem = ({ item: debt }: { item: Debt }) => {
+    const isDebtor = debt.from === user?.id;
+    const isCreditor = debt.to === user?.id;
+    
+    if (!isDebtor && !isCreditor) return null;
+
+    return (
+      <Card style={styles.settlementCard}>
+        <View style={styles.settlementInfo}>
+          <Icon 
+            name={isDebtor ? "arrow-up-circle" : "arrow-down-circle"} 
+            size={24} 
+            color={isDebtor ? theme.colors.error : theme.colors.success} 
+          />
+          <ThemeText style={styles.settlementText}>
+            {isDebtor ? 
+              `You owe ${debt.to}` : 
+              `${debt.from} owes you`}
+          </ThemeText>
+        </View>
+        <View style={styles.settlementAmount}>
+          <ThemeText style={[styles.settlementValue, { 
+            color: isDebtor ? theme.colors.error : theme.colors.success 
+          }]}>
+            ${debt.amount.toFixed(2)}
+          </ThemeText>
+          {(isDebtor || isCreditor) && (
+            <CustomButton
+              title="Settle"
+              onPress={() => {
+                // TODO: Implement settlement logic
+                Alert.alert('Coming soon', 'Settlement feature is under development');
+              }}
+              style={styles.settleButton}
+              size="small"
+              variant="outline"
+            />
+          )}
+        </View>
+      </Card>
+    );
+  };
+
+  const renderAddExpenseModal = () => (
+    <Modal
+      visible={showAddExpense}
+      animationType="slide"
+      onRequestClose={() => setShowAddExpense(false)}
+    >
+      <View style={[styles.modalContainer, { backgroundColor: theme.colors.background }]}>
+        <Header 
+          title="Add Expense" 
+          leftIcon="close"
+          onLeftPress={() => setShowAddExpense(false)}
+        />
+        <AddExpenseForm
+          groupId={groupId}
+          participants={currentGroup?.members || []}
+          onSuccess={() => {
+            setShowAddExpense(false);
+            dispatch(fetchExpenses(groupId));
+            Alert.alert('Success', 'Expense added successfully');
+          }}
+          onCancel={() => setShowAddExpense(false)}
+        />
+      </View>
+    </Modal>
+  );
+
+  const renderMembersModal = () => (
+    <Modal
+      visible={showMembers}
+      animationType="slide"
+      onRequestClose={() => setShowMembers(false)}
+    >
+      <View style={[styles.modalContainer, { backgroundColor: theme.colors.background }]}>
+        <Header 
+          title="Group Members" 
+          leftIcon="close"
+          onLeftPress={() => setShowMembers(false)}
+        />
+        <FlatList
+          data={currentGroup?.members || []}
+          renderItem={renderMemberItem}
+          keyExtractor={item => item}
+          contentContainerStyle={styles.membersList}
+        />
+      </View>
+    </Modal>
+  );
+
+  const renderSettleUpModal = () => (
+    <Modal
+      visible={showSettleUp}
+      animationType="slide"
+      onRequestClose={() => setShowSettleUp(false)}
+    >
+      <View style={[styles.modalContainer, { backgroundColor: theme.colors.background }]}>
+        <Header 
+          title="Settle Up" 
+          leftIcon="close"
+          onLeftPress={() => setShowSettleUp(false)}
+        />
+        <FlatList
+          data={currentGroup?.simplifiedDebts || []}
+          renderItem={renderSettlementItem}
+          keyExtractor={(item, index) => `${item.from}-${item.to}-${index}`}
+          contentContainerStyle={styles.settlementList}
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <Icon name="check-circle" size={48} color={theme.colors.success} />
+              <ThemeText style={styles.emptyStateText}>
+                All settled up!
+              </ThemeText>
+            </View>
+          }
+        />
+      </View>
+    </Modal>
+  );
+
   if (groupLoading || !currentGroup) {
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <Header 
-          title="Group Details" 
+          title="Loading..." 
           leftIcon="arrow-left"
           onLeftPress={() => navigation.goBack()}
         />
@@ -238,78 +257,98 @@ export const GroupDetailScreen = ({ route, navigation }: any) => {
     );
   }
 
+  const balances = currentGroup.balances || [];
+  const userBalance = balances.find(b => b.userId === user?.id)?.amount || 0;
+  const simplifiedDebts = currentGroup.simplifiedDebts || [];
+  const members = currentGroup.members || [];
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <Header 
-          title={currentGroup.name} 
+          title={currentGroup.name || 'Group'} 
           leftIcon="arrow-left"
           onLeftPress={() => navigation.goBack()}
-          rightIcon="plus"
-          onRightPress={() => navigation.navigate('AddExpense', { groupId })}
         />
-        
-        <Card style={styles.summaryCard}>
-          <View style={styles.summaryRow}>
-            <View style={styles.summaryItem}>
-              <ThemeText variant="caption">Total Expenses</ThemeText>
-              <ThemeText variant="title">${currentGroup.totalExpenses.toFixed(2)}</ThemeText>
-            </View>
-            <View style={styles.summaryItem}>
-              <ThemeText variant="caption">Members</ThemeText>
-              <ThemeText variant="title">{currentGroup.members.length}</ThemeText>
-            </View>
-          </View>
+
+        <View style={styles.content}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.actionCards}>
+            <Card style={[styles.actionCard, { backgroundColor: theme.colors.primary }]}>
+              <ThemeText style={styles.actionTitle}>Total Expenses</ThemeText>
+              <ThemeText style={styles.actionAmount}>
+                ${(currentGroup.totalExpenses || 0).toFixed(2)}
+              </ThemeText>
+            </Card>
+
+            <Card style={[styles.actionCard, { 
+              backgroundColor: userBalance > 0 ? theme.colors.success : 
+                            userBalance < 0 ? theme.colors.error :
+                            theme.colors.card
+            }]}>
+              <ThemeText style={styles.actionTitle}>
+                {userBalance > 0 ? 'You are owed' :
+                 userBalance < 0 ? 'You owe' :
+                 'You are settled up'}
+              </ThemeText>
+              <ThemeText style={styles.actionAmount}>
+                ${Math.abs(userBalance).toFixed(2)}
+              </ThemeText>
+            </Card>
+          </ScrollView>
+
           <View style={styles.actionButtons}>
-            <TouchableOpacity 
-              style={[styles.actionButton, { backgroundColor: theme.colors.primary }]}
-              onPress={() => navigation.navigate('SettleUp', { groupId })}
-            >
-              <Icon name="cash-multiple" size={20} color="#FFFFFF" />
-              <ThemeText style={styles.actionButtonText}>Settle Up</ThemeText>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.actionButton, { backgroundColor: theme.colors.secondary }]}
-              onPress={() => navigation.navigate('GroupMembers', { groupId })}
-            >
-              <Icon name="account-group" size={20} color="#FFFFFF" />
-              <ThemeText style={styles.actionButtonText}>Members</ThemeText>
-            </TouchableOpacity>
-          </View>
-        </Card>
-        
-        <View style={styles.expensesContainer}>
-          <View style={styles.sectionHeader}>
-            <ThemeText variant="subtitle" style={styles.sectionTitle}>Expenses</ThemeText>
-            <TouchableOpacity onPress={() => navigation.navigate('AddExpense', { groupId })}>
-              <Icon name="plus" size={24} color={theme.colors.primary} />
-            </TouchableOpacity>
-          </View>
-          
-          {expensesLoading ? (
-            <ActivityIndicator size="large" color={theme.colors.primary} />
-          ) : (
-            <FlatList
-              data={expenses}
-              renderItem={renderExpenseItem}
-              keyExtractor={(item) => item.id}
-              contentContainerStyle={styles.expensesList}
-              ListEmptyComponent={
-                <View style={styles.emptyExpenses}>
-                  <Icon name="cash-remove" size={48} color={theme.colors.placeholder} />
-                  <ThemeText style={styles.emptyText}>No expenses yet</ThemeText>
-                  <CustomButton
-                    title="Add an Expense"
-                    onPress={() => navigation.navigate('AddExpense', { groupId })}
-                    variant="outline"
-                    style={styles.addExpenseButton}
-                    icon={<Icon name="plus" size={18} color={theme.colors.primary} />}
-                  />
-                </View>
-              }
+            <CustomButton
+              title="Members"
+              onPress={() => setShowMembers(true)}
+              icon={<Icon name="account-group" size={20} color="#FFFFFF" />}
+              style={styles.actionButton}
+              size="small"
             />
-          )}
+            <CustomButton
+              title="Settle Up"
+              onPress={() => setShowSettleUp(true)}
+              icon={<Icon name="cash-multiple" size={20} color="#FFFFFF" />}
+              style={styles.actionButton}
+              size="small"
+            />
+            <CustomButton
+              title="Add Expense"
+              onPress={() => setShowAddExpense(true)}
+              icon={<Icon name="plus" size={20} color="#FFFFFF" />}
+              style={styles.actionButton}
+              size="small"
+            />
+          </View>
+
+          <View style={styles.expensesContainer}>
+            <View style={styles.expensesHeader}>
+              <ThemeText variant="title">Recent Expenses</ThemeText>
+            </View>
+
+            {expensesLoading ? (
+              <ActivityIndicator size="large" color={theme.colors.primary} />
+            ) : (
+              <FlatList
+                data={expenses}
+                renderItem={renderExpenseItem}
+                keyExtractor={item => item.id}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.expensesList}
+                ListEmptyComponent={
+                  <View style={styles.emptyState}>
+                    <Icon name="cash-remove" size={48} color={theme.colors.placeholder} />
+                    <ThemeText style={styles.emptyStateText}>
+                      No expenses yet
+                    </ThemeText>
+                  </View>
+                }
+              />
+            )}
+          </View>
         </View>
+        {renderAddExpenseModal()}
+        {renderMembersModal()}
+        {renderSettleUpModal()}
       </View>
     </GestureHandlerRootView>
   );
@@ -324,53 +363,63 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  summaryCard: {
-    margin: 16,
+  content: {
+    flex: 1,
+    padding: 16,
   },
-  summaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  actionCards: {
+    flexGrow: 0,
     marginBottom: 16,
   },
-  summaryItem: {
-    alignItems: 'center',
+  actionCard: {
+    padding: 16,
+    marginRight: 12,
+    width: width * 0.7,
+    minHeight: 100,
+    justifyContent: 'center',
+  },
+  actionTitle: {
+    color: '#FFFFFF',
+    marginBottom: 8,
+  },
+  actionAmount: {
+    color: '#FFFFFF',
+    fontSize: 24,
+    fontWeight: 'bold',
   },
   actionButtons: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 16,
+    marginBottom: 24,
   },
   actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
     flex: 1,
     marginHorizontal: 4,
   },
-  actionButtonText: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-    marginLeft: 8,
-  },
   expensesContainer: {
     flex: 1,
-    padding: 16,
-    paddingTop: 0,
   },
-  sectionHeader: {
+  expensesHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
-  },
-  sectionTitle: {
-    fontWeight: 'bold',
+    marginBottom: 16,
   },
   expensesList: {
     flexGrow: 1,
+  },
+  emptyState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 32,
+  },
+  emptyStateText: {
+    marginTop: 8,
+    opacity: 0.7,
+  },
+  modalContainer: {
+    flex: 1,
   },
   expenseCard: {
     marginBottom: 12,
@@ -382,36 +431,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
-  expenseDescription: {
-    fontWeight: '600',
-  },
-  expenseAmount: {
-    fontWeight: '600',
-  },
   expenseDetails: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 8,
-  },
-  expenseDetail: {
-    flexDirection: 'row',
     alignItems: 'center',
-  },
-  detailText: {
-    marginLeft: 4,
-  },
-  emptyExpenses: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 40,
-  },
-  emptyText: {
-    marginTop: 16,
-    marginBottom: 24,
-    textAlign: 'center',
-  },
-  addExpenseButton: {
-    minWidth: 150,
   },
   deleteAction: {
     justifyContent: 'center',
@@ -419,6 +442,54 @@ const styles = StyleSheet.create({
     width: 70,
     height: '100%',
     marginBottom: 12,
+  },
+  membersList: {
+    padding: 16,
+  },
+  memberCard: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    marginBottom: 12,
+  },
+  memberInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  memberName: {
+    marginLeft: 12,
+  },
+  memberBalance: {
+    fontWeight: '600',
+  },
+  settlementList: {
+    padding: 16,
+  },
+  settlementCard: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    marginBottom: 12,
+  },
+  settlementInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  settlementText: {
+    marginLeft: 12,
+  },
+  settlementAmount: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  settlementValue: {
+    fontWeight: '600',
+    marginRight: 12,
+  },
+  settleButton: {
+    minWidth: 80,
   },
 });
 
