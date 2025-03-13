@@ -23,7 +23,7 @@ export const fetchExpenses = createAsyncThunk(
     const expensesSnapshot = await firestore()
       .collection('expenses')
       .where('groupId', '==', groupId)
-      .orderBy('date', 'desc')
+      .orderBy('createdAt', 'desc')
       .get();
     
     return expensesSnapshot.docs.map(doc => {
@@ -37,9 +37,7 @@ export const fetchExpenses = createAsyncThunk(
         splitType: data.splitType,
         splits: data.splits,
         participants: data.participants,
-        date: data.date?.toDate(),
         createdAt: data.createdAt?.toDate(),
-        category: data.category
       } as Expense;
     });
   }
@@ -90,18 +88,30 @@ export const addExpense = createAsyncThunk(
           .where('groupId', '==', params.groupId)
           .get();
 
+        // Convert all expenses to the correct format with dates
         const allExpenses = [
-          ...expensesSnapshot.docs.map(doc => ({ 
-            id: doc.id, 
-            ...doc.data(),
-            createdAt: doc.data().createdAt?.toDate(),
-          } as Expense)),
+          ...expensesSnapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+              id: doc.id,
+              ...data,
+              createdAt: data.createdAt?.toDate() || new Date(),
+              splits: data.splits || [],
+              participants: data.participants || []
+            } as Expense;
+          }),
           { id: expenseRef.id, ...expenseData }
         ];
 
         // Calculate new balances
         const balances = calculateBalances(allExpenses, params.participants);
         const simplifiedDebts = simplifyDebts(balances);
+
+        console.log('Calculated Balances:', {
+          expenses: allExpenses,
+          balances,
+          simplifiedDebts
+        });
 
         // Update group with new balances and total
         batch.update(groupRef, {

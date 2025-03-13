@@ -47,7 +47,18 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
       dispatch(fetchGroupById(groupId));
       dispatch(fetchExpenses(groupId));
     }
-  }, [dispatch, groupId, expenses.length]);
+  }, [dispatch, groupId]);
+
+  useEffect(() => {
+    if (currentGroup) {
+      console.log('Current Group Data:', {
+        groupId,
+        members: currentGroup.members,
+        balances: currentGroup.balances,
+        expenses
+      });
+    }
+  }, [currentGroup, expenses]);
 
   const handleDeleteExpense = async (expenseId: string) => {
     try {
@@ -100,6 +111,15 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
     const balance = balances.find(b => b.userId === memberId);
     const isCurrentUser = memberId === user?.id;
     const balanceAmount = balance?.amount || 0;
+
+    // Debug logging
+    console.log('Member Balance:', {
+      memberId,
+      balance,
+      balanceAmount,
+      allBalances: balances
+    });
+
     const balanceColor = balanceAmount > 0 ? theme.colors.success : 
                         balanceAmount < 0 ? theme.colors.error : 
                         theme.colors.text;
@@ -114,7 +134,7 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
         </View>
         <ThemeText style={[styles.memberBalance, { color: balanceColor }]}>
           {balanceAmount === 0 ? 'All settled' :
-           balanceAmount > 0 ? `Gets back $${balanceAmount.toFixed(2)}` :
+           balanceAmount > 0 ? `Gets back $${Math.abs(balanceAmount).toFixed(2)}` :
            `Owes $${Math.abs(balanceAmount).toFixed(2)}`}
         </ThemeText>
       </Card>
