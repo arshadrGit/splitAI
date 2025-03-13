@@ -1,28 +1,29 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  View, 
-  StyleSheet, 
-  FlatList, 
-  TextInput, 
-  Alert, 
+import React, {useState, useEffect, useCallback} from 'react';
+import {
+  View,
+  StyleSheet,
+  FlatList,
+  TextInput,
+  Alert,
   ActivityIndicator,
   TouchableOpacity,
   Image,
   Modal,
-  Keyboard
+  Keyboard,
 } from 'react-native';
-import { useDispatch, useSelector } from 'react-redux';
-import { AppDispatch, RootState } from '../redux/store';
-import { fetchFriends, addFriend } from '../redux/friendsSlice';
-import { useTheme } from '../themes/ThemeProvider';
-import { ThemeText } from '../components/ThemeText';
-import { CustomButton } from '../components/CustomButton';
-import { Card } from '../components/Card';
-import { Header } from '../components/Header';
+import {useDispatch, useSelector} from 'react-redux';
+import {AppDispatch, RootState} from '../redux/store';
+import {fetchFriends, addFriend} from '../redux/friendsSlice';
+import {useTheme} from '../themes/ThemeProvider';
+import {ThemeText} from '../components/ThemeText';
+import {CustomButton} from '../components/CustomButton';
+import {Card} from '../components/Card';
+import {Header} from '../components/Header';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import firestore from '@react-native-firebase/firestore';
 import debounce from 'lodash/debounce';
-import { User, Friend } from '../types';
+import {User, Friend} from '../types';
+import SafeAreaWrapper from '../components/SafeAreaWrapper';
 
 export const FriendsScreen = () => {
   const [loading, setLoading] = useState(false);
@@ -33,10 +34,12 @@ export const FriendsScreen = () => {
   const [showManualAdd, setShowManualAdd] = useState(false);
   const [manualName, setManualName] = useState('');
   const [manualEmail, setManualEmail] = useState('');
-  
+
   const dispatch = useDispatch<AppDispatch>();
-  const { theme } = useTheme();
-  const { friends, loading: friendsLoading } = useSelector((state: RootState) => state.friends);
+  const {theme} = useTheme();
+  const {friends, loading: friendsLoading} = useSelector(
+    (state: RootState) => state.friends,
+  );
   const user = useSelector((state: RootState) => state.auth.user);
 
   useEffect(() => {
@@ -64,7 +67,7 @@ export const FriendsScreen = () => {
           .get();
 
         const results = querySnapshot.docs
-          .map(doc => ({ id: doc.id, ...doc.data() } as User))
+          .map(doc => ({id: doc.id, ...doc.data()} as User))
           .filter(user => user.id !== user?.id); // Exclude current user
 
         setSearchResults(results);
@@ -75,7 +78,7 @@ export const FriendsScreen = () => {
         setIsSearching(false);
       }
     }, 500),
-    []
+    [],
   );
 
   useEffect(() => {
@@ -89,19 +92,25 @@ export const FriendsScreen = () => {
     return emailRegex.test(email);
   };
 
-  const handleAddFriend = async (friendId: string, displayName: string, email?: string) => {
+  const handleAddFriend = async (
+    friendId: string,
+    displayName: string,
+    email?: string,
+  ) => {
     if (!user) return;
 
     setLoading(true);
     try {
-      await dispatch(addFriend({
-        userId: user.id,
-        friendId,
-        displayName,
-        email,
-        createdAt: new Date(),
-      })).unwrap();
-      
+      await dispatch(
+        addFriend({
+          userId: user.id,
+          friendId,
+          displayName,
+          email,
+          createdAt: new Date(),
+        }),
+      ).unwrap();
+
       dispatch(fetchFriends(user.id));
       setSearchQuery('');
       setSearchResults([]);
@@ -132,18 +141,20 @@ export const FriendsScreen = () => {
     setManualEmail('');
   };
 
-  const renderFriendItem = ({ item }: { item: Friend }) => {
+  const renderFriendItem = ({item}: {item: Friend}) => {
     const displayName = item.displayName || item.email || item.friendId;
     const initial = displayName.charAt(0).toUpperCase();
-    
+
     return (
       <Card style={styles.friendCard}>
         <View style={styles.friendInfo}>
           <View style={styles.friendLeft}>
-            <View style={[styles.avatarContainer, { backgroundColor: theme.colors.secondary }]}>
-              <ThemeText style={styles.avatarText}>
-                {initial}
-              </ThemeText>
+            <View
+              style={[
+                styles.avatarContainer,
+                {backgroundColor: theme.colors.secondary},
+              ]}>
+              <ThemeText style={styles.avatarText}>{initial}</ThemeText>
             </View>
             <View>
               <ThemeText variant="title" style={styles.friendName}>
@@ -162,165 +173,211 @@ export const FriendsScreen = () => {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      <Header 
-        title="Friends"
-        rightIcon="account-plus"
-        onRightPress={() => setShowAddFriend(true)}
-      />
+    <SafeAreaWrapper>
+      <View
+        style={[styles.container, {backgroundColor: theme.colors.background}]}>
+        <Header
+          title="Friends"
+          rightIcon="account-plus"
+          onRightPress={() => setShowAddFriend(true)}
+        />
 
-      {friendsLoading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.colors.primary} />
-        </View>
-      ) : (
-        <View style={styles.friendsContainer}>
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Icon name="account-group" size={20} color={theme.colors.secondary} />
-              <ThemeText variant="title" style={styles.sectionTitle}>
-                Friends ({friends.length})
-              </ThemeText>
-            </View>
-            {friends.length > 0 ? (
-              <FlatList
-                data={friends}
-                renderItem={renderFriendItem}
-                keyExtractor={(item) => item.id}
-                contentContainerStyle={styles.listContent}
-                showsVerticalScrollIndicator={false}
-              />
-            ) : (
-              <View style={styles.emptyState}>
-                <Icon name="account-group" size={64} color={theme.colors.placeholder} />
-                <ThemeText variant="title" style={styles.emptyTitle}>No Friends Yet</ThemeText>
-                <ThemeText style={styles.emptyText}>Add friends to split expenses with them</ThemeText>
-                <CustomButton
-                  title="Add a Friend"
-                  onPress={() => setShowAddFriend(true)}
-                  style={styles.addFriendButton}
-                  icon={<Icon name="account-plus" size={20} color="#FFFFFF" />}
-                />
-              </View>
-            )}
+        {friendsLoading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={theme.colors.primary} />
           </View>
-        </View>
-      )}
-
-      {/* Add Friend Modal */}
-      <Modal
-        visible={showAddFriend}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setShowAddFriend(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: theme.colors.background }]}>
-            <View style={styles.modalHeader}>
-              <ThemeText variant="title">Add a Friend</ThemeText>
-              <TouchableOpacity onPress={() => setShowAddFriend(false)}>
-                <Icon name="close" size={24} color={theme.colors.text} />
-              </TouchableOpacity>
-            </View>
-
-            {!showManualAdd ? (
-              <>
-                <TextInput
-                  style={[styles.searchInput, { 
-                    backgroundColor: theme.colors.card,
-                    color: theme.colors.text,
-                    borderColor: theme.colors.border
-                  }]}
-                  placeholder="Search by email..."
-                  placeholderTextColor={theme.colors.placeholder}
-                  value={searchQuery}
-                  onChangeText={setSearchQuery}
-                  autoCapitalize="none"
-                  keyboardType="email-address"
+        ) : (
+          <View style={styles.friendsContainer}>
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Icon
+                  name="account-group"
+                  size={20}
+                  color={theme.colors.secondary}
                 />
-
-                {isSearching ? (
-                  <ActivityIndicator style={styles.searchLoading} color={theme.colors.primary} />
-                ) : searchResults.length > 0 ? (
-                  <FlatList
-                    data={searchResults}
-                    keyExtractor={(item) => item.id}
-                    style={styles.searchResults}
-                    renderItem={({ item }) => (
-                      <Card style={styles.searchResultCard}>
-                        <View style={styles.searchResultInfo}>
-                          <View>
-                            <ThemeText style={styles.searchResultName}>
-                              {item.displayName || item.email}
-                            </ThemeText>
-                            <ThemeText style={styles.searchResultEmail}>
-                              {item.email}
-                            </ThemeText>
-                          </View>
-                        </View>
-                        <CustomButton
-                          title="Add"
-                          onPress={() => handleAddFriend(item.id, item.displayName || item.email, item.email)}
-                          style={styles.addButton}
-                          loading={loading}
-                        />
-                      </Card>
-                    )}
+                <ThemeText variant="title" style={styles.sectionTitle}>
+                  Friends ({friends.length})
+                </ThemeText>
+              </View>
+              {friends.length > 0 ? (
+                <FlatList
+                  data={friends}
+                  renderItem={renderFriendItem}
+                  keyExtractor={item => item.id}
+                  contentContainerStyle={styles.listContent}
+                  showsVerticalScrollIndicator={false}
+                />
+              ) : (
+                <View style={styles.emptyState}>
+                  <Icon
+                    name="account-group"
+                    size={64}
+                    color={theme.colors.placeholder}
                   />
-                ) : searchQuery ? (
-                  <View style={styles.noResultsContainer}>
-                    <ThemeText style={styles.noResultsText}>
-                      No users found with this email
-                    </ThemeText>
-                    <CustomButton
-                      title="Add Manually"
-                      onPress={() => setShowManualAdd(true)}
-                      variant="outline"
-                      style={styles.manualAddButton}
-                      icon={<Icon name="account-plus" size={18} color={theme.colors.primary} />}
-                    />
-                  </View>
-                ) : null}
-              </>
-            ) : (
-              <View style={styles.manualAddForm}>
-                <TextInput
-                  style={[styles.input, { 
-                    backgroundColor: theme.colors.card,
-                    color: theme.colors.text,
-                    borderColor: theme.colors.border
-                  }]}
-                  placeholder="Friend's Name"
-                  placeholderTextColor={theme.colors.placeholder}
-                  value={manualName}
-                  onChangeText={setManualName}
-                />
-                <TextInput
-                  style={[styles.input, { 
-                    backgroundColor: theme.colors.card,
-                    color: theme.colors.text,
-                    borderColor: theme.colors.border
-                  }]}
-                  placeholder="Friend's Email (optional)"
-                  placeholderTextColor={theme.colors.placeholder}
-                  value={manualEmail}
-                  onChangeText={setManualEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                />
-                <CustomButton
-                  title="Add Friend"
-                  onPress={handleManualAdd}
-                  style={styles.modalButton}
-                  loading={loading}
-                  icon={<Icon name="account-plus" size={20} color="#FFFFFF" />}
-                />
-              </View>
-            )}
+                  <ThemeText variant="title" style={styles.emptyTitle}>
+                    No Friends Yet
+                  </ThemeText>
+                  <ThemeText style={styles.emptyText}>
+                    Add friends to split expenses with them
+                  </ThemeText>
+                  <CustomButton
+                    title="Add a Friend"
+                    onPress={() => setShowAddFriend(true)}
+                    style={styles.addFriendButton}
+                    icon={
+                      <Icon name="account-plus" size={20} color="#FFFFFF" />
+                    }
+                  />
+                </View>
+              )}
+            </View>
           </View>
-        </View>
-      </Modal>
-    </View>
+        )}
+
+        {/* Add Friend Modal */}
+        <Modal
+          visible={showAddFriend}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setShowAddFriend(false)}>
+          <View style={styles.modalOverlay}>
+            <View
+              style={[
+                styles.modalContent,
+                {backgroundColor: theme.colors.background},
+              ]}>
+              <View style={styles.modalHeader}>
+                <ThemeText variant="title">Add a Friend</ThemeText>
+                <TouchableOpacity onPress={() => setShowAddFriend(false)}>
+                  <Icon name="close" size={24} color={theme.colors.text} />
+                </TouchableOpacity>
+              </View>
+
+              {!showManualAdd ? (
+                <>
+                  <TextInput
+                    style={[
+                      styles.searchInput,
+                      {
+                        backgroundColor: theme.colors.card,
+                        color: theme.colors.text,
+                        borderColor: theme.colors.border,
+                      },
+                    ]}
+                    placeholder="Search by email..."
+                    placeholderTextColor={theme.colors.placeholder}
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                  />
+
+                  {isSearching ? (
+                    <ActivityIndicator
+                      style={styles.searchLoading}
+                      color={theme.colors.primary}
+                    />
+                  ) : searchResults.length > 0 ? (
+                    <FlatList
+                      data={searchResults}
+                      keyExtractor={item => item.id}
+                      style={styles.searchResults}
+                      renderItem={({item}) => (
+                        <Card style={styles.searchResultCard}>
+                          <View style={styles.searchResultInfo}>
+                            <View>
+                              <ThemeText style={styles.searchResultName}>
+                                {item.displayName || item.email}
+                              </ThemeText>
+                              <ThemeText style={styles.searchResultEmail}>
+                                {item.email}
+                              </ThemeText>
+                            </View>
+                          </View>
+                          <CustomButton
+                            title="Add"
+                            onPress={() =>
+                              handleAddFriend(
+                                item.id,
+                                item.displayName || item.email,
+                                item.email,
+                              )
+                            }
+                            style={styles.addButton}
+                            loading={loading}
+                          />
+                        </Card>
+                      )}
+                    />
+                  ) : searchQuery ? (
+                    <View style={styles.noResultsContainer}>
+                      <ThemeText style={styles.noResultsText}>
+                        No users found with this email
+                      </ThemeText>
+                      <CustomButton
+                        title="Add Manually"
+                        onPress={() => setShowManualAdd(true)}
+                        variant="outline"
+                        style={styles.manualAddButton}
+                        icon={
+                          <Icon
+                            name="account-plus"
+                            size={18}
+                            color={theme.colors.primary}
+                          />
+                        }
+                      />
+                    </View>
+                  ) : null}
+                </>
+              ) : (
+                <View style={styles.manualAddForm}>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      {
+                        backgroundColor: theme.colors.card,
+                        color: theme.colors.text,
+                        borderColor: theme.colors.border,
+                      },
+                    ]}
+                    placeholder="Friend's Name"
+                    placeholderTextColor={theme.colors.placeholder}
+                    value={manualName}
+                    onChangeText={setManualName}
+                  />
+                  <TextInput
+                    style={[
+                      styles.input,
+                      {
+                        backgroundColor: theme.colors.card,
+                        color: theme.colors.text,
+                        borderColor: theme.colors.border,
+                      },
+                    ]}
+                    placeholder="Friend's Email (optional)"
+                    placeholderTextColor={theme.colors.placeholder}
+                    value={manualEmail}
+                    onChangeText={setManualEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                  />
+                  <CustomButton
+                    title="Add Friend"
+                    onPress={handleManualAdd}
+                    style={styles.modalButton}
+                    loading={loading}
+                    icon={
+                      <Icon name="account-plus" size={20} color="#FFFFFF" />
+                    }
+                  />
+                </View>
+              )}
+            </View>
+          </View>
+        </Modal>
+      </View>
+    </SafeAreaWrapper>
   );
 };
 
@@ -480,4 +537,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default FriendsScreen; 
+export default FriendsScreen;
