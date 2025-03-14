@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   View, 
   StyleSheet, 
@@ -9,11 +9,14 @@ import {
   Modal,
   ScrollView,
   Dimensions,
+  RefreshControl,
+  Text,
+  TextInput,
 } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch, RootState } from '../redux/store';
 import { fetchGroupById } from '../redux/groupsSlice';
-import { fetchExpenses, deleteExpense } from '../redux/expensesSlice';
+import { fetchExpenses, deleteExpense, recordPayment } from '../redux/expensesSlice';
 import { useTheme } from '../themes/ThemeProvider';
 import { ThemeText } from '../components/ThemeText';
 import { CustomButton } from '../components/CustomButton';
@@ -29,7 +32,7 @@ import { RootStackParamList } from '../navigation/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'GroupDetail'>;
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 
 export const GroupDetailScreen = ({ route, navigation }: Props) => {
   const { groupId } = route.params;
@@ -41,13 +44,33 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
   const [showAddExpense, setShowAddExpense] = useState(false);
   const [showMembers, setShowMembers] = useState(false);
   const [showSettleUp, setShowSettleUp] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [expenseFilter, setExpenseFilter] = useState<'all' | 'paid' | 'received'>('all');
+  const [showAllExpenses, setShowAllExpenses] = useState(false);
+  const [showSettlementModal, setShowSettlementModal] = useState(false);
+  const [selectedDebt, setSelectedDebt] = useState<Debt | null>(null);
+  const [settlementAmount, setSettlementAmount] = useState('');
 
   useEffect(() => {
     if (groupId) {
+      console.log('Fetching data for group ID:', groupId);
       dispatch(fetchGroupById(groupId));
       dispatch(fetchExpenses(groupId));
     }
   }, [dispatch, groupId]);
+
+  // Add this effect to refresh expenses when navigating between groups
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      if (groupId) {
+        console.log('Screen focused, refreshing data for group ID:', groupId);
+        dispatch(fetchGroupById(groupId));
+        dispatch(fetchExpenses(groupId));
+      }
+    });
+
+    return unsubscribe;
+  }, [navigation, dispatch, groupId]);
 
   useEffect(() => {
     if (currentGroup) {
@@ -55,10 +78,21 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
         groupId,
         members: currentGroup.members,
         balances: currentGroup.balances,
-        expenses
       });
+      
+      // Debug expenses data
+      console.log('All Expenses:', expenses.map(e => ({
+        id: e.id,
+        description: e.description,
+        groupId: e.groupId,
+        amount: e.amount
+      })));
+      
+      // Debug filtered expenses
+      const groupExpenses = expenses.filter(e => e.groupId === groupId);
+      console.log('Filtered Expenses for this group:', groupExpenses.length);
     }
-  }, [currentGroup, expenses]);
+  }, [currentGroup, expenses, groupId]);
 
   const handleDeleteExpense = async (expenseId: string) => {
     try {
@@ -80,10 +114,27 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
     );
   };
 
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    Promise.all([
+      dispatch(fetchGroupById(groupId)),
+      dispatch(fetchExpenses(groupId))
+    ]).finally(() => {
+      setRefreshing(false);
+    });
+  }, [dispatch, groupId]);
+
   const renderExpenseItem = ({ item }: { item: Expense }) => {
     const createdAt = new Date(item.createdAt);
     const formattedDate = `${createdAt.getMonth() + 1}/${createdAt.getDate()}/${createdAt.getFullYear()}`;
     const isPayer = item.paidBy === user?.id;
+    
+    // Find the user's split in this expense
+    const userSplit = item.splits.find(split => split.userId === user?.id);
+    const userAmount = userSplit?.amount || 0;
+    
+    // Calculate if the user owes money or is owed money in this expense
+    const userBalance = isPayer ? item.amount - userAmount : -userAmount;
     
     return (
       <Swipeable
@@ -96,11 +147,34 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
             <ThemeText variant="caption">{formattedDate}</ThemeText>
           </View>
           <View style={styles.expenseDetails}>
-            <ThemeText variant="body">${item.amount.toFixed(2)}</ThemeText>
-            <ThemeText variant="caption">
-              {isPayer ? 'You paid' : `Paid by ${item.paidBy}`}
-            </ThemeText>
+            <View>
+              <ThemeText variant="body">${item.amount.toFixed(2)}</ThemeText>
+              <ThemeText variant="caption">
+                {isPayer ? 'You paid' : `Paid by ${item.paidBy}`}
+              </ThemeText>
+            </View>
+            <View style={styles.expenseBalance}>
+              <ThemeText 
+                style={[
+                  styles.balanceText, 
+                  { color: userBalance > 0 ? theme.colors.success : userBalance < 0 ? theme.colors.error : theme.colors.text }
+                ]}
+              >
+                {userBalance > 0 
+                  ? `You get back $${userBalance.toFixed(2)}` 
+                  : userBalance < 0 
+                    ? `You owe $${Math.abs(userBalance).toFixed(2)}`
+                    : 'Settled'}
+              </ThemeText>
+            </View>
           </View>
+          {item.splitType !== 'EQUAL' && (
+            <View style={styles.splitInfo}>
+              <ThemeText variant="caption" style={styles.splitTypeText}>
+                {item.splitType === 'EXACT' ? 'Custom split' : 'Percentage split'}
+              </ThemeText>
+            </View>
+          )}
         </Card>
       </Swipeable>
     );
@@ -147,6 +221,15 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
     
     if (!isDebtor && !isCreditor) return null;
 
+    // Get display names for users
+    const getDisplayName = (userId: string) => {
+      if (userId === user?.id) return 'You';
+      return userId; // In a real app, you'd look up the user's display name
+    };
+
+    const fromName = getDisplayName(debt.from);
+    const toName = getDisplayName(debt.to);
+
     return (
       <Card style={styles.settlementCard}>
         <View style={styles.settlementInfo}>
@@ -157,8 +240,8 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
           />
           <ThemeText style={styles.settlementText}>
             {isDebtor ? 
-              `You owe ${debt.to}` : 
-              `${debt.from} owes you`}
+              `You owe ${toName}` : 
+              `${fromName} owes you`}
           </ThemeText>
         </View>
         <View style={styles.settlementAmount}>
@@ -170,10 +253,7 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
           {(isDebtor || isCreditor) && (
             <CustomButton
               title="Settle"
-              onPress={() => {
-                // TODO: Implement settlement logic
-                Alert.alert('Coming soon', 'Settlement feature is under development');
-              }}
+              onPress={() => handleSettleUp(debt)}
               style={styles.settleButton}
               size="small"
               variant="outline"
@@ -182,6 +262,57 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
         </View>
       </Card>
     );
+  };
+
+  // Handle the settle up button press
+  const handleSettleUp = (debt: Debt) => {
+    setSelectedDebt(debt);
+    setSettlementAmount(debt.amount.toFixed(2));
+    setShowSettlementModal(true);
+  };
+
+  // Handle recording a payment
+  const handleRecordPayment = async () => {
+    if (!selectedDebt || !user?.id) return;
+    
+    try {
+      const amount = parseFloat(settlementAmount);
+      if (isNaN(amount) || amount <= 0) {
+        Alert.alert('Error', 'Please enter a valid amount');
+        return;
+      }
+
+      if (amount > selectedDebt.amount) {
+        Alert.alert('Error', `The maximum amount you can settle is $${selectedDebt.amount.toFixed(2)}`);
+        return;
+      }
+
+      // Determine who is paying whom
+      const payerId = selectedDebt.from;
+      const payeeId = selectedDebt.to;
+
+      // Record the payment
+      await dispatch(recordPayment({
+        groupId,
+        payerId,
+        payeeId,
+        amount
+      })).unwrap();
+
+      // Close the modal and refresh the data
+      setShowSettlementModal(false);
+      setSelectedDebt(null);
+      setSettlementAmount('');
+      
+      // Refresh the group data to update balances
+      dispatch(fetchGroupById(groupId));
+      dispatch(fetchExpenses(groupId));
+      
+      Alert.alert('Success', 'Payment recorded successfully');
+    } catch (error) {
+      console.error('Payment recording failed:', error);
+      Alert.alert('Error', 'Failed to record payment');
+    }
   };
 
   const renderAddExpenseModal = () => (
@@ -244,6 +375,32 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
           leftIcon="close"
           onLeftPress={() => setShowSettleUp(false)}
         />
+        
+        <View style={styles.settleUpInfo}>
+          <ThemeText style={styles.settleUpInfoText}>
+            These are the simplified payments that will settle all debts in the group with the minimum number of transactions.
+          </ThemeText>
+          
+          <Card style={styles.helpCard}>
+            <View style={styles.helpHeader}>
+              <Icon name="information-outline" size={20} color={theme.colors.primary} />
+              <ThemeText style={[styles.helpTitle, { color: theme.colors.primary }]}>How Settle Up Works</ThemeText>
+            </View>
+            <ThemeText style={styles.helpText}>
+              1. Each expense is tracked with who paid and how it's split.
+            </ThemeText>
+            <ThemeText style={styles.helpText}>
+              2. Balances are calculated for each person (positive if owed money, negative if owing money).
+            </ThemeText>
+            <ThemeText style={styles.helpText}>
+              3. When you settle up, you record a payment from someone who owes to someone who is owed.
+            </ThemeText>
+            <ThemeText style={styles.helpText}>
+              4. The app simplifies debts to minimize the number of transactions needed to settle everyone up.
+            </ThemeText>
+          </Card>
+        </View>
+        
         <FlatList
           data={currentGroup?.simplifiedDebts || []}
           renderItem={renderSettlementItem}
@@ -259,6 +416,68 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
           }
         />
       </View>
+    </Modal>
+  );
+
+  // Render the settlement modal
+  const renderSettlementModal = () => (
+    <Modal
+      visible={showSettlementModal}
+      transparent
+      animationType="fade"
+      onRequestClose={() => setShowSettlementModal(false)}
+    >
+      <TouchableOpacity 
+        style={styles.modalOverlay} 
+        activeOpacity={1} 
+        onPress={() => setShowSettlementModal(false)}
+      >
+        <View style={[styles.settlementModalContent, { backgroundColor: theme.colors.card }]}>
+          <ThemeText variant="title" style={styles.modalTitle}>
+            Settle Up
+          </ThemeText>
+          
+          {selectedDebt && (
+            <>
+              <View style={styles.settlementDetails}>
+                <ThemeText style={styles.settlementLabel}>
+                  {selectedDebt.from === user?.id ? 
+                    `You are paying ${selectedDebt.to}` : 
+                    `${selectedDebt.from} is paying you`}
+                </ThemeText>
+                <View style={styles.amountInputContainer}>
+                  <ThemeText style={styles.currencySymbol}>$</ThemeText>
+                  <TextInput
+                    style={[styles.amountInput, { color: theme.colors.text }]}
+                    value={settlementAmount}
+                    onChangeText={setSettlementAmount}
+                    keyboardType="decimal-pad"
+                    placeholder="0.00"
+                    placeholderTextColor={theme.colors.placeholder}
+                  />
+                </View>
+                <ThemeText style={styles.maxAmount}>
+                  Maximum: ${selectedDebt.amount.toFixed(2)}
+                </ThemeText>
+              </View>
+
+              <View style={styles.settlementActions}>
+                <CustomButton
+                  title="Cancel"
+                  onPress={() => setShowSettlementModal(false)}
+                  variant="outline"
+                  style={styles.settlementButton}
+                />
+                <CustomButton
+                  title="Record Payment"
+                  onPress={handleRecordPayment}
+                  style={styles.settlementButton}
+                />
+              </View>
+            </>
+          )}
+        </View>
+      </TouchableOpacity>
     </Modal>
   );
 
@@ -281,6 +500,27 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
   const userBalance = balances.find(b => b.userId === user?.id)?.amount || 0;
   const simplifiedDebts = currentGroup.simplifiedDebts || [];
   const members = currentGroup.members || [];
+
+  // Filter expenses based on the selected filter and ensure they belong to the current group
+  const filteredExpenses = expenses.filter(expense => {
+    const userId = user?.id || '';
+    // First, ensure the expense belongs to this group
+    if (expense.groupId !== groupId) return false;
+    
+    // Then apply the user's filter
+    if (expenseFilter === 'all') return true;
+    if (expenseFilter === 'paid') return expense.paidBy === userId;
+    if (expenseFilter === 'received') return expense.paidBy !== userId && expense.participants.includes(userId);
+    return true;
+  });
+
+  // Sort expenses by date (most recent first)
+  const sortedExpenses = [...filteredExpenses].sort((a, b) => 
+    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+
+  // Limit the number of expenses shown unless showAllExpenses is true
+  const displayExpenses = showAllExpenses ? sortedExpenses : sortedExpenses.slice(0, 5);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -343,32 +583,103 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
           <View style={styles.expensesContainer}>
             <View style={styles.expensesHeader}>
               <ThemeText variant="title">Recent Expenses</ThemeText>
+              <View style={styles.filterContainer}>
+                <TouchableOpacity 
+                  style={[
+                    styles.filterButton, 
+                    expenseFilter === 'all' && styles.activeFilterButton
+                  ]}
+                  onPress={() => setExpenseFilter('all')}
+                >
+                  <ThemeText 
+                    style={[
+                      styles.filterText, 
+                      expenseFilter === 'all' && styles.activeFilterText
+                    ]}
+                  >
+                    All
+                  </ThemeText>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[
+                    styles.filterButton, 
+                    expenseFilter === 'paid' && styles.activeFilterButton
+                  ]}
+                  onPress={() => setExpenseFilter('paid')}
+                >
+                  <ThemeText 
+                    style={[
+                      styles.filterText, 
+                      expenseFilter === 'paid' && styles.activeFilterText
+                    ]}
+                  >
+                    Paid
+                  </ThemeText>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[
+                    styles.filterButton, 
+                    expenseFilter === 'received' && styles.activeFilterButton
+                  ]}
+                  onPress={() => setExpenseFilter('received')}
+                >
+                  <ThemeText 
+                    style={[
+                      styles.filterText, 
+                      expenseFilter === 'received' && styles.activeFilterText
+                    ]}
+                  >
+                    Received
+                  </ThemeText>
+                </TouchableOpacity>
+              </View>
             </View>
 
             {expensesLoading ? (
               <ActivityIndicator size="large" color={theme.colors.primary} />
             ) : (
-              <FlatList
-                data={expenses}
-                renderItem={renderExpenseItem}
-                keyExtractor={item => item.id}
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={styles.expensesList}
-                ListEmptyComponent={
-                  <View style={styles.emptyState}>
-                    <Icon name="cash-remove" size={48} color={theme.colors.placeholder} />
-                    <ThemeText style={styles.emptyStateText}>
-                      No expenses yet
+              <>
+                <FlatList
+                  data={displayExpenses}
+                  renderItem={renderExpenseItem}
+                  keyExtractor={item => item.id}
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={styles.expensesList}
+                  refreshControl={
+                    <RefreshControl
+                      refreshing={refreshing}
+                      onRefresh={onRefresh}
+                      colors={[theme.colors.primary]}
+                      tintColor={theme.colors.primary}
+                    />
+                  }
+                  ListEmptyComponent={
+                    <View style={styles.emptyState}>
+                      <Icon name="cash-remove" size={48} color={theme.colors.placeholder} />
+                      <ThemeText style={styles.emptyStateText}>
+                        No expenses yet
+                      </ThemeText>
+                    </View>
+                  }
+                />
+                {sortedExpenses.length > 5 && (
+                  <TouchableOpacity 
+                    style={styles.viewAllButton}
+                    onPress={() => setShowAllExpenses(!showAllExpenses)}
+                  >
+                    <ThemeText style={styles.viewAllText}>
+                      {showAllExpenses ? 'Show Less' : `View All (${sortedExpenses.length})`}
                     </ThemeText>
-                  </View>
-                }
-              />
+                  </TouchableOpacity>
+                )}
+              </>
             )}
           </View>
         </View>
         {renderAddExpenseModal()}
         {renderMembersModal()}
         {renderSettleUpModal()}
+        {renderSettlementModal()}
       </View>
     </GestureHandlerRootView>
   );
@@ -510,6 +821,134 @@ const styles = StyleSheet.create({
   },
   settleButton: {
     minWidth: 80,
+  },
+  expenseBalance: {
+    alignItems: 'flex-end',
+  },
+  balanceText: {
+    fontWeight: '600',
+    fontSize: 12,
+  },
+  splitInfo: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,0,0,0.1)',
+  },
+  splitTypeText: {
+    fontSize: 12,
+    fontStyle: 'italic',
+  },
+  filterContainer: {
+    flexDirection: 'row',
+  },
+  filterButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginLeft: 8,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0,0,0,0.05)',
+  },
+  activeFilterButton: {
+    backgroundColor: 'rgba(0,0,0,0.1)',
+  },
+  filterText: {
+    fontSize: 12,
+  },
+  activeFilterText: {
+    fontWeight: 'bold',
+  },
+  viewAllButton: {
+    padding: 12,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  viewAllText: {
+    color: '#007AFF',
+    fontWeight: '600',
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  settlementModalContent: {
+    padding: 24,
+    borderRadius: 12,
+    width: width * 0.8,
+    maxHeight: height * 0.8,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 24,
+    textAlign: 'center',
+  },
+  settlementDetails: {
+    marginBottom: 24,
+  },
+  settlementLabel: {
+    fontSize: 16,
+    marginBottom: 16,
+  },
+  amountInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.1)',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+  },
+  currencySymbol: {
+    marginRight: 8,
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  amountInput: {
+    flex: 1,
+    fontSize: 18,
+  },
+  maxAmount: {
+    fontSize: 12,
+    opacity: 0.7,
+    marginTop: 4,
+  },
+  settlementActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 24,
+  },
+  settlementButton: {
+    flex: 1,
+    marginHorizontal: 4,
+  },
+  settleUpInfo: {
+    padding: 16,
+    marginBottom: 24,
+  },
+  settleUpInfoText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 16,
+  },
+  helpCard: {
+    marginBottom: 16,
+    padding: 16,
+  },
+  helpHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  helpTitle: {
+    marginLeft: 8,
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  helpText: {
+    marginBottom: 8,
   },
 });
 

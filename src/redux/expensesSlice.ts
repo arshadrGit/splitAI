@@ -1,6 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import firestore from '@react-native-firebase/firestore';
-import { Expense, ExpenseSplit, Split, SplitType } from '../types';
+import { Expense, ExpenseSplit, Split, SplitType, Balance } from '../types';
 import { collection, addDoc, serverTimestamp } from '@firebase/firestore';
 import { calculateSplitAmounts, calculateBalances, simplifyDebts } from '../utils/debtSimplification';
 
@@ -258,21 +258,65 @@ export const recordPayment = createAsyncThunk(
         description: 'Payment Settlement',
         amount: amount,
         paidBy: payerId,
-        date: firestore.Timestamp.now(),
+        splitType: 'EXACT',
+        participants: [payerId, payeeId],
         splits: [
           {
             userId: payeeId,
             amount: amount
           }
         ],
-        createdBy: payerId,
         createdAt: firestore.Timestamp.now(),
         type: 'payment'
       };
       
       batch.set(expenseRef, expenseData);
 
-      // Commit both operations
+      // Update group balances
+      const groupRef = db.collection('groups').doc(groupId);
+      const groupDoc = await groupRef.get();
+      
+      if (groupDoc.exists) {
+        const groupData = groupDoc.data();
+        
+        if (groupData) {
+          // Get current balances
+          const currentBalances = groupData.balances || [];
+          
+          // Update balances for payer and payee
+          const updatedBalances = currentBalances.map((balance: Balance) => {
+            if (balance.userId === payerId) {
+              // Payer's balance increases (they owe less)
+              return {
+                ...balance,
+                amount: Number((balance.amount + amount).toFixed(2))
+              };
+            } else if (balance.userId === payeeId) {
+              // Payee's balance decreases (they are owed less)
+              return {
+                ...balance,
+                amount: Number((balance.amount - amount).toFixed(2))
+              };
+            }
+            return balance;
+          });
+          
+          // Recalculate simplified debts
+          const simplifiedDebts = simplifyDebts(updatedBalances);
+          
+          // Update group with new balances and simplified debts
+          batch.update(groupRef, {
+            balances: updatedBalances,
+            simplifiedDebts: simplifiedDebts.map(d => ({
+              from: d.from,
+              to: d.to,
+              amount: Number(d.amount.toFixed(2))
+            }))
+          });
+        }
+      }
+
+      // Commit all operations
       await batch.commit();
 
       return { success: true };

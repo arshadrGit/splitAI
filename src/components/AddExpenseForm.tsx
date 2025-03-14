@@ -98,6 +98,9 @@ export const AddExpenseForm: React.FC<Props> = ({
         }));
       }
 
+      // Debug log to verify groupId
+      console.log('Adding expense with groupId:', groupId);
+
       await dispatch(addExpense({
         description,
         amount: numAmount,
