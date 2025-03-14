@@ -13,13 +13,16 @@ import {
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch, RootState } from '../redux/store';
 import { fetchGroupById } from '../redux/groupsSlice';
-import { calculateBalances, recordPayment } from '../redux/expensesSlice';
+import { fetchExpenses } from '../redux/expensesSlice';
 import { useTheme } from '../themes/ThemeProvider';
 import { ThemeText } from '../components/ThemeText';
 import { CustomButton } from '../components/CustomButton';
 import { Card } from '../components/Card';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../navigation/types';
+import { Balance, Debt } from '../types';
+import { auth } from '../firebase/firebaseConfig';
 
 interface Settlement {
   from: string;
@@ -27,83 +30,92 @@ interface Settlement {
   amount: string;
 }
 
-type RootStackParamList = {
-  SettleUp: { groupId: string };
-};
-
 type Props = NativeStackScreenProps<RootStackParamList, 'SettleUp'>;
 
-const SettleUpScreen = ({ route, navigation }: Props) => {
+const SettleUpScreen: React.FC<Props> = ({ route, navigation }) => {
   const { groupId } = route.params;
-  const [balances, setBalances] = useState<Record<string, number>>({});
-  const [settlements, setSettlements] = useState<Settlement[]>([]);
+  const [balances, setBalances] = useState<Balance[]>([]);
+  const [settlements, setSettlements] = useState<Debt[]>([]);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [selectedSettlement, setSelectedSettlement] = useState<Settlement | null>(null);
+  const [selectedSettlement, setSelectedSettlement] = useState<Debt | null>(null);
   const [amount, setAmount] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   
   const dispatch = useDispatch<AppDispatch>();
   const { theme } = useTheme();
-  const { currentGroup, loading: groupLoading } = useSelector((state: RootState) => state.groups);
-  const { friends } = useSelector((state: RootState) => state.friends);
-  const user = useSelector((state: RootState) => state.auth.user);
+  const group = useSelector((state: RootState) => 
+    state.expenses.groups.find(g => g.id === groupId)
+  );
+  const currentUserId = auth().currentUser?.uid;
 
   useEffect(() => {
-    if (groupId) {
-      dispatch(fetchGroupById(groupId));
-      loadBalances();
-    }
+    loadBalances();
   }, [dispatch, groupId]);
 
   const loadBalances = async () => {
     try {
       setLoading(true);
-      const result = await dispatch(calculateBalances(groupId)).unwrap();
-      setBalances(result);
-      calculateSettlements(result);
-    } catch (error) {
-      console.log('error: ',error);
       
+      // Fetch group data and expenses
+      await Promise.all([
+        dispatch(fetchGroupById(groupId)),
+        dispatch(fetchExpenses(groupId))
+      ]);
+      
+      // Get the updated group with balances
+      const updatedGroup = await dispatch(fetchGroupById(groupId)).unwrap();
+      
+      if (updatedGroup && updatedGroup.balances) {
+        // Convert balances array to record for compatibility
+        const balanceRecord: Record<string, number> = {};
+        updatedGroup.balances.forEach(balance => {
+          balanceRecord[balance.userId] = balance.amount;
+        });
+        
+        setBalances(updatedGroup.balances);
+        calculateSettlements(balanceRecord);
+      } else {
+        console.error('No balances found in group data');
+        Alert.alert('Error', 'Could not load balance information');
+      }
+    } catch (error) {
+      console.error('Error loading balances:', 
+        typeof error === 'object' ? JSON.stringify(error) : error);
       Alert.alert('Error', 'Failed to load balances');
     } finally {
       setLoading(false);
     }
   };
 
-  const calculateSettlements = (balanceData: Record<string, number>) => {
-    if (!user) return;
+  const calculateSettlements = (balanceData: Balance[]) => {
+    if (!currentUserId) return;
 
     // First, separate the user's balance from others
-    const userBalance = balanceData[user.id] || 0;
-    const otherUsers = Object.entries(balanceData)
-      .filter(([userId]) => userId !== user.id)
-      .map(([userId, balance]) => ({
-        id: userId,
-        balance
-      }));
+    const userBalance = balanceData.find(b => b.userId === currentUserId);
+    const otherUsers = balanceData.filter(b => b.userId !== currentUserId);
 
-    const newSettlements: Settlement[] = [];
+    const newSettlements: Debt[] = [];
 
-    if (userBalance > 0) {
+    if (userBalance && userBalance.balance > 0) {
       // User is owed money
       otherUsers
         .filter(other => other.balance < 0) // Only include users who owe money
         .forEach(debtor => {
           newSettlements.push({
-            from: debtor.id,
-            to: user.id,
-            amount: Math.min(Math.abs(debtor.balance), userBalance).toFixed(2)
+            from: debtor.userId,
+            to: currentUserId,
+            amount: Math.min(Math.abs(debtor.balance), userBalance.balance).toFixed(2)
           });
         });
-    } else if (userBalance < 0) {
+    } else if (userBalance && userBalance.balance < 0) {
       // User owes money
       otherUsers
         .filter(other => other.balance > 0) // Only include users who are owed money
         .forEach(creditor => {
           newSettlements.push({
-            from: user.id,
-            to: creditor.id,
-            amount: Math.min(Math.abs(userBalance), creditor.balance).toFixed(2)
+            from: currentUserId,
+            to: creditor.userId,
+            amount: Math.min(Math.abs(userBalance.balance), creditor.balance).toFixed(2)
           });
         });
     }
@@ -112,23 +124,23 @@ const SettleUpScreen = ({ route, navigation }: Props) => {
   };
 
   const getUserName = (userId: string) => {
-    if (userId === user?.id) return 'You';
+    if (userId === currentUserId) return 'You';
     
-    const friend = friends.find(f => 
+    const friend = group?.friends.find(f => 
       f.userId === userId || f.friendId === userId
     );
     
     return friend ? (friend.displayName || friend.email) : 'Unknown User';
   };
 
-  const handleSettlePayment = (settlement: Settlement) => {
+  const handleSettlePayment = (settlement: Debt) => {
     setSelectedSettlement(settlement);
     setAmount(settlement.amount);
     setShowPaymentModal(true);
   };
 
   const handleRecordPayment = async () => {
-    if (!selectedSettlement || !user) return;
+    if (!selectedSettlement || !currentUserId) return;
     
     try {
       setLoading(true);
@@ -139,7 +151,7 @@ const SettleUpScreen = ({ route, navigation }: Props) => {
         amount: parseFloat(amount)
       });
 
-      const result = await dispatch(recordPayment({
+      const result = await dispatch(fetchExpenses({
         groupId,
         payerId: selectedSettlement.from,
         payeeId: selectedSettlement.to,
@@ -161,8 +173,8 @@ const SettleUpScreen = ({ route, navigation }: Props) => {
     }
   };
 
-  const renderSettlementItem = ({ item }: { item: Settlement }) => {
-    const isUserInvolved = item.from === user?.id || item.to === user?.id;
+  const renderSettlementItem = ({ item }: { item: Debt }) => {
+    const isUserInvolved = item.from === currentUserId || item.to === currentUserId;
     const fromName = getUserName(item.from);
     const toName = getUserName(item.to);
     
@@ -174,9 +186,9 @@ const SettleUpScreen = ({ route, navigation }: Props) => {
         <View style={styles.settlementInfo}>
           <View style={styles.settlementDetails}>
             <ThemeText variant="title" style={styles.settlementTitle}>
-              {item.to === user?.id ? 
+              {item.to === currentUserId ? 
                 `${fromName} owes you` : 
-                item.from === user?.id ? 
+                item.from === currentUserId ? 
                   `You owe ${toName}` :
                   `${fromName} owes ${toName}`}
             </ThemeText>
@@ -198,7 +210,7 @@ const SettleUpScreen = ({ route, navigation }: Props) => {
     );
   };
 
-  if (loading || groupLoading) {
+  if (loading) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: theme.colors.background }]}>
         <ActivityIndicator size="large" color={theme.colors.primary} />
@@ -212,13 +224,13 @@ const SettleUpScreen = ({ route, navigation }: Props) => {
         <ThemeText variant="title" style={styles.balanceTitle}>
           Your Balance
         </ThemeText>
-        {user && balances[user.id] !== undefined ? (
+        {group && group.balances.length > 0 ? (
           <ThemeText variant="title" style={[
             styles.balanceAmount,
-            { color: balances[user.id] > 0 ? theme.colors.success : balances[user.id] < 0 ? theme.colors.error : theme.colors.text }
+            { color: group.balances[0].balance > 0 ? theme.colors.success : group.balances[0].balance < 0 ? theme.colors.error : theme.colors.text }
           ]}>
-            {balances[user.id] > 0 ? 'You are owed ' : balances[user.id] < 0 ? 'You owe ' : ''}
-            ${Math.abs(balances[user.id] || 0).toFixed(2)}
+            {group.balances[0].balance > 0 ? 'You are owed ' : group.balances[0].balance < 0 ? 'You owe ' : ''}
+            ${Math.abs(group.balances[0].balance || 0).toFixed(2)}
           </ThemeText>
         ) : (
           <ThemeText>No balance information</ThemeText>

@@ -29,6 +29,7 @@ import { Expense, Balance, Debt } from '../types';
 import AddExpenseForm from '../components/AddExpenseForm';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
+import { auth } from '../firebase/firebaseConfig';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'GroupDetail'>;
 
@@ -50,6 +51,9 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
   const [showSettlementModal, setShowSettlementModal] = useState(false);
   const [selectedDebt, setSelectedDebt] = useState<Debt | null>(null);
   const [settlementAmount, setSettlementAmount] = useState('');
+  const [showSettlementHistory, setShowSettlementHistory] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState(0);
+  const [paymentModalVisible, setPaymentModalVisible] = useState(false);
 
   useEffect(() => {
     if (groupId) {
@@ -64,16 +68,24 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
     const unsubscribe = navigation.addListener('focus', () => {
       if (groupId) {
         console.log('Screen focused, refreshing data for group ID:', groupId);
-        dispatch(fetchGroupById(groupId));
-        dispatch(fetchExpenses(groupId));
+        // Use Promise.all to ensure both requests complete
+        Promise.all([
+          dispatch(fetchGroupById(groupId)),
+          dispatch(fetchExpenses(groupId))
+        ]).then(() => {
+          console.log('Data refreshed on screen focus');
+        }).catch(error => {
+          console.error('Error refreshing data:', error);
+        });
       }
     });
 
     return unsubscribe;
   }, [navigation, dispatch, groupId]);
 
+  // Add a debug effect to log expenses
   useEffect(() => {
-    if (currentGroup) {
+    if (currentGroup && expenses.length > 0) {
       console.log('Current Group Data:', {
         groupId,
         members: currentGroup.members,
@@ -85,12 +97,19 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
         id: e.id,
         description: e.description,
         groupId: e.groupId,
-        amount: e.amount
+        amount: e.amount,
+        type: e.type,
+        payeeId: e.payeeId,
+        createdAt: e.createdAt
       })));
       
       // Debug filtered expenses
       const groupExpenses = expenses.filter(e => e.groupId === groupId);
       console.log('Filtered Expenses for this group:', groupExpenses.length);
+      
+      // Debug payment transactions
+      const paymentTransactions = expenses.filter(e => e.type === 'payment' && e.groupId === groupId);
+      console.log('Payment Transactions:', paymentTransactions.length, paymentTransactions);
     }
   }, [currentGroup, expenses, groupId]);
 
@@ -115,11 +134,17 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
   };
 
   const onRefresh = useCallback(() => {
+    console.log('Manual refresh triggered');
     setRefreshing(true);
+    
     Promise.all([
       dispatch(fetchGroupById(groupId)),
       dispatch(fetchExpenses(groupId))
-    ]).finally(() => {
+    ]).then(() => {
+      console.log('Data refreshed successfully');
+      setRefreshing(false);
+    }).catch(error => {
+      console.error('Error refreshing data:', error);
       setRefreshing(false);
     });
   }, [dispatch, groupId]);
@@ -127,6 +152,50 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
   const renderExpenseItem = ({ item }: { item: Expense }) => {
     const createdAt = new Date(item.createdAt);
     const formattedDate = `${createdAt.getMonth() + 1}/${createdAt.getDate()}/${createdAt.getFullYear()}`;
+    
+    // Handle payment transactions differently
+    if (item.type === 'payment') {
+      const isPayer = item.paidBy === user?.id;
+      const isPayee = item.payeeId === user?.id;
+      
+      // Get display names for users
+      const getDisplayName = (userId: string) => {
+        if (userId === user?.id) return 'You';
+        return userId; // In a real app, you'd look up the user's display name
+      };
+      
+      const payerName = getDisplayName(item.paidBy);
+      const payeeName = getDisplayName(item.payeeId || '');
+      
+      return (
+        <Card style={[styles.expenseCard, { borderLeftColor: theme.colors.success, borderLeftWidth: 4 }]}>
+          <View style={styles.expenseHeader}>
+            <ThemeText variant="title">Payment Settlement</ThemeText>
+            <ThemeText variant="caption">{formattedDate}</ThemeText>
+          </View>
+          <View style={styles.expenseDetails}>
+            <View>
+              <ThemeText variant="body">${item.amount.toFixed(2)}</ThemeText>
+              <ThemeText variant="caption">
+                {`${payerName} paid ${payeeName}`}
+              </ThemeText>
+            </View>
+            <View style={styles.expenseBalance}>
+              <ThemeText 
+                style={[
+                  styles.balanceText, 
+                  { color: isPayer ? theme.colors.error : isPayee ? theme.colors.success : theme.colors.text }
+                ]}
+              >
+                {isPayer ? 'Paid' : isPayee ? 'Received' : 'Settlement'}
+              </ThemeText>
+            </View>
+          </View>
+        </Card>
+      );
+    }
+    
+    // Regular expense handling
     const isPayer = item.paidBy === user?.id;
     
     // Find the user's split in this expense
@@ -273,15 +342,20 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
 
   // Handle recording a payment
   const handleRecordPayment = async () => {
-    if (!selectedDebt || !user?.id) return;
+    if (!selectedDebt || !user?.id) {
+      Alert.alert('Error', 'No debt selected or user not logged in');
+      return;
+    }
     
     try {
+      // Validate payment amount
       const amount = parseFloat(settlementAmount);
       if (isNaN(amount) || amount <= 0) {
         Alert.alert('Error', 'Please enter a valid amount');
         return;
       }
 
+      // Validate amount doesn't exceed debt
       if (amount > selectedDebt.amount) {
         Alert.alert('Error', `The maximum amount you can settle is $${selectedDebt.amount.toFixed(2)}`);
         return;
@@ -291,27 +365,61 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
       const payerId = selectedDebt.from;
       const payeeId = selectedDebt.to;
 
-      // Record the payment
-      await dispatch(recordPayment({
+      // Show loading indicator
+      setRefreshing(true);
+
+      console.log('Recording payment:', {
         groupId,
         payerId,
         payeeId,
         amount
-      })).unwrap();
+      });
 
-      // Close the modal and refresh the data
-      setShowSettlementModal(false);
-      setSelectedDebt(null);
-      setSettlementAmount('');
-      
-      // Refresh the group data to update balances
-      dispatch(fetchGroupById(groupId));
-      dispatch(fetchExpenses(groupId));
-      
-      Alert.alert('Success', 'Payment recorded successfully');
+      try {
+        // Record the payment
+        const result = await dispatch(
+          recordPayment({
+            groupId,
+            payerId,
+            payeeId,
+            amount
+          })
+        ).unwrap();
+
+        console.log('Payment recorded successfully:', result);
+        
+        // Close the modal and reset the state
+        setShowSettlementModal(false);
+        setSelectedDebt(null);
+        setSettlementAmount('');
+        
+        // Refresh data
+        try {
+          await Promise.all([
+            dispatch(fetchGroupById(groupId)),
+            dispatch(fetchExpenses(groupId))
+          ]);
+          console.log('Data refreshed after payment');
+        } catch (refreshError) {
+          console.error('Error refreshing data after payment:', 
+            typeof refreshError === 'object' ? JSON.stringify(refreshError) : refreshError);
+          // Continue even if refresh fails
+        }
+        
+        // Show success message
+        Alert.alert('Success', 'Payment recorded successfully');
+      } catch (paymentError) {
+        console.error('Error recording payment:', 
+          typeof paymentError === 'object' ? JSON.stringify(paymentError) : paymentError);
+        Alert.alert('Error', 'Failed to record payment. Please try again.');
+      }
     } catch (error) {
-      console.error('Payment recording failed:', error);
-      Alert.alert('Error', 'Failed to record payment');
+      console.error('Unexpected error in handleRecordPayment:', 
+        typeof error === 'object' ? JSON.stringify(error) : error);
+      Alert.alert('Error', 'An unexpected error occurred. Please try again.');
+    } finally {
+      // Hide loading indicator
+      setRefreshing(false);
     }
   };
 
@@ -481,6 +589,88 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
     </Modal>
   );
 
+  const renderSettlementHistory = () => {
+    const settlementTransactions = expenses.filter(expense => expense.type === 'payment' && expense.groupId === groupId);
+    
+    console.log('Settlement Transactions for history:', settlementTransactions.length);
+    
+    if (settlementTransactions.length === 0) {
+      return (
+        <View style={styles.emptyState}>
+          <Icon name="cash-check" size={48} color={theme.colors.placeholder} />
+          <ThemeText style={styles.emptyStateText}>
+            No settlement history yet
+          </ThemeText>
+        </View>
+      );
+    }
+
+    return (
+      <FlatList
+        data={settlementTransactions}
+        renderItem={({ item }) => {
+          const isPayer = item.paidBy === user?.id;
+          const isPayee = item.payeeId === user?.id;
+          const createdAt = new Date(item.createdAt);
+          const formattedDate = `${createdAt.getMonth() + 1}/${createdAt.getDate()}/${createdAt.getFullYear()}`;
+          
+          // Get display names for users
+          const getDisplayName = (userId: string) => {
+            if (userId === user?.id) return 'You';
+            return userId; // In a real app, you'd look up the user's display name
+          };
+          
+          const payerName = getDisplayName(item.paidBy);
+          const payeeName = getDisplayName(item.payeeId || '');
+          
+          return (
+            <Card style={[styles.settlementCard, { borderLeftColor: theme.colors.success, borderLeftWidth: 4 }]}>
+              <View style={styles.settlementHeader}>
+                <ThemeText variant="title">Payment Settlement</ThemeText>
+                <ThemeText variant="caption">{formattedDate}</ThemeText>
+              </View>
+              <View style={styles.settlementDetailsContainer}>
+                <ThemeText variant="body">
+                  {`${payerName} paid ${payeeName}`}
+                </ThemeText>
+                <ThemeText 
+                  style={[
+                    styles.settlementValue,
+                    { color: isPayer ? theme.colors.error : isPayee ? theme.colors.success : theme.colors.text }
+                  ]}
+                >
+                  ${item.amount.toFixed(2)}
+                </ThemeText>
+              </View>
+            </Card>
+          );
+        }}
+        keyExtractor={item => item.id}
+        contentContainerStyle={styles.settlementList}
+      />
+    );
+  };
+
+  // Add settlement history modal
+  const renderSettlementHistoryModal = () => (
+    <Modal
+      visible={showSettlementHistory}
+      animationType="slide"
+      onRequestClose={() => setShowSettlementHistory(false)}
+    >
+      <View style={[styles.modalContainer, { backgroundColor: theme.colors.background }]}>
+        <Header 
+          title="Settlement History" 
+          leftIcon="close"
+          onLeftPress={() => setShowSettlementHistory(false)}
+          rightIcon="refresh"
+          onRightPress={onRefresh}
+        />
+        {renderSettlementHistory()}
+      </View>
+    </Modal>
+  );
+
   if (groupLoading || !currentGroup) {
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -522,6 +712,44 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
   // Limit the number of expenses shown unless showAllExpenses is true
   const displayExpenses = showAllExpenses ? sortedExpenses : sortedExpenses.slice(0, 5);
 
+  // Update the action buttons section
+  const renderActionButtons = () => (
+    <View style={styles.actionButtons}>
+      <View style={styles.actionButtonRow}>
+        <CustomButton
+          title="Members"
+          onPress={() => setShowMembers(true)}
+          icon={<Icon name="account-group" size={20} color="#FFFFFF" />}
+          style={styles.actionButton}
+          size="small"
+        />
+        <CustomButton
+          title="Settle Up"
+          onPress={() => setShowSettleUp(true)}
+          icon={<Icon name="cash-multiple" size={20} color="#FFFFFF" />}
+          style={styles.actionButton}
+          size="small"
+        />
+      </View>
+      <View style={styles.actionButtonRow}>
+        <CustomButton
+          title="Add Expense"
+          onPress={() => setShowAddExpense(true)}
+          icon={<Icon name="plus" size={20} color="#FFFFFF" />}
+          style={styles.actionButton}
+          size="small"
+        />
+        <CustomButton
+          title="History"
+          onPress={() => setShowSettlementHistory(true)}
+          icon={<Icon name="history" size={20} color="#FFFFFF" />}
+          style={styles.actionButton}
+          size="small"
+        />
+      </View>
+    </View>
+  );
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -556,29 +784,7 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
             </Card>
           </ScrollView>
 
-          <View style={styles.actionButtons}>
-            <CustomButton
-              title="Members"
-              onPress={() => setShowMembers(true)}
-              icon={<Icon name="account-group" size={20} color="#FFFFFF" />}
-              style={styles.actionButton}
-              size="small"
-            />
-            <CustomButton
-              title="Settle Up"
-              onPress={() => setShowSettleUp(true)}
-              icon={<Icon name="cash-multiple" size={20} color="#FFFFFF" />}
-              style={styles.actionButton}
-              size="small"
-            />
-            <CustomButton
-              title="Add Expense"
-              onPress={() => setShowAddExpense(true)}
-              icon={<Icon name="plus" size={20} color="#FFFFFF" />}
-              style={styles.actionButton}
-              size="small"
-            />
-          </View>
+          {renderActionButtons()}
 
           <View style={styles.expensesContainer}>
             <View style={styles.expensesHeader}>
@@ -680,6 +886,7 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
         {renderMembersModal()}
         {renderSettleUpModal()}
         {renderSettlementModal()}
+        {renderSettlementHistoryModal()}
       </View>
     </GestureHandlerRootView>
   );
@@ -719,9 +926,12 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   actionButtons: {
+    marginBottom: 24,
+  },
+  actionButtonRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 24,
+    marginBottom: 8,
   },
   actionButton: {
     flex: 1,
@@ -949,6 +1159,17 @@ const styles = StyleSheet.create({
   },
   helpText: {
     marginBottom: 8,
+  },
+  settlementHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  settlementDetailsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
 });
 

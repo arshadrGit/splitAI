@@ -52,6 +52,8 @@ export interface Expense {
   participants: string[];
   createdAt: Date;
   category?: string;
+  type: 'expense' | 'payment';
+  payeeId?: string;
 }
 
 export interface Payment {

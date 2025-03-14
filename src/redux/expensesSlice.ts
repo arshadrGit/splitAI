@@ -20,26 +20,55 @@ const initialState: ExpensesState = {
 export const fetchExpenses = createAsyncThunk(
   'expenses/fetchExpenses',
   async (groupId: string) => {
-    const expensesSnapshot = await firestore()
-      .collection('expenses')
-      .where('groupId', '==', groupId)
-      .orderBy('createdAt', 'desc')
-      .get();
-    
-    return expensesSnapshot.docs.map(doc => {
-      const data = doc.data();
-      return {
-        id: doc.id,
-        description: data.description,
-        amount: data.amount,
-        paidBy: data.paidBy,
-        groupId: data.groupId,
-        splitType: data.splitType,
-        splits: data.splits,
-        participants: data.participants,
-        createdAt: data.createdAt?.toDate(),
-      } as Expense;
-    });
+    try {
+      console.log(`Fetching expenses for group ${groupId}`);
+      const db = firestore();
+      let expensesSnapshot;
+      
+      try {
+        // Try with ordering (requires index)
+        expensesSnapshot = await db
+          .collection('expenses')
+          .where('groupId', '==', groupId)
+          .get();
+          
+        console.log(`Found ${expensesSnapshot.docs.length} expenses for group ${groupId}`);
+      } catch (error) {
+        // Log the error details without accessing error.stack
+        console.error('Error fetching expenses:', 
+          error instanceof Error ? error.message : 'Unknown error');
+        throw error;
+      }
+      
+      const expenses = expensesSnapshot.docs.map(doc => {
+        const data = doc.data();
+        const expense = {
+          id: doc.id,
+          description: data.description || '',
+          amount: data.amount || 0,
+          paidBy: data.paidBy || '',
+          groupId: data.groupId,
+          splitType: data.splitType || 'EQUAL',
+          splits: data.splits || [],
+          participants: data.participants || [],
+          createdAt: data.createdAt?.toDate() || new Date(),
+          type: data.type || 'expense',
+          payeeId: data.payeeId
+        } as Expense;
+        return expense;
+      });
+      
+      // Sort manually by createdAt
+      expenses.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      
+      console.log(`Processed ${expenses.length} expenses`);
+      return expenses;
+    } catch (error) {
+      // Safely handle the error without accessing stack
+      console.error('Error in fetchExpenses:', 
+        error instanceof Error ? error.message : 'Unknown error');
+      throw error;
+    }
   }
 );
 
@@ -57,80 +86,94 @@ interface AddExpenseParams {
 export const addExpense = createAsyncThunk(
   'expenses/addExpense',
   async (params: AddExpenseParams) => {
-    const expenseData: Omit<Expense, 'id'> = {
-      description: params.description,
-      amount: params.amount,
-      paidBy: params.paidBy,
-      groupId: params.groupId || undefined,
-      splitType: params.splitType,
-      splits: params.splits,
-      participants: params.participants,
-      createdAt: new Date(),
-    };
+    try {
+      console.log('Adding expense with params:', params);
+      
+      const expenseData: Omit<Expense, 'id'> = {
+        description: params.description,
+        amount: params.amount,
+        paidBy: params.paidBy,
+        groupId: params.groupId || undefined,
+        splitType: params.splitType,
+        splits: params.splits,
+        participants: params.participants,
+        createdAt: new Date(),
+        type: 'expense'
+      };
 
-    const db = firestore();
-    const batch = db.batch();
+      const db = firestore();
+      const batch = db.batch();
 
-    // Create expense document
-    const expenseRef = db.collection('expenses').doc();
-    batch.set(expenseRef, expenseData);
+      // Create expense document
+      const expenseRef = db.collection('expenses').doc();
+      batch.set(expenseRef, {
+        ...expenseData,
+        createdAt: firestore.Timestamp.fromDate(expenseData.createdAt)
+      });
 
-    // Update group balances if it's a group expense
-    if (params.groupId) {
-      const groupRef = db.collection('groups').doc(params.groupId);
-      const groupDoc = await groupRef.get();
-      const groupData = groupDoc.data();
+      // Update group balances if it's a group expense
+      if (params.groupId) {
+        const groupRef = db.collection('groups').doc(params.groupId);
+        const groupDoc = await groupRef.get();
+        const groupData = groupDoc.data();
 
-      if (groupData) {
-        // Get all group expenses including the new one
-        const expensesSnapshot = await db
-          .collection('expenses')
-          .where('groupId', '==', params.groupId)
-          .get();
+        if (groupData) {
+          // Get all group expenses including the new one
+          const expensesSnapshot = await db
+            .collection('expenses')
+            .where('groupId', '==', params.groupId)
+            .get();
 
-        // Convert all expenses to the correct format with dates
-        const allExpenses = [
-          ...expensesSnapshot.docs.map(doc => {
-            const data = doc.data();
-            return {
-              id: doc.id,
-              ...data,
-              createdAt: data.createdAt?.toDate() || new Date(),
-              splits: data.splits || [],
-              participants: data.participants || []
-            } as Expense;
-          }),
-          { id: expenseRef.id, ...expenseData }
-        ];
+          // Convert all expenses to the correct format with dates
+          const allExpenses = [
+            ...expensesSnapshot.docs.map(doc => {
+              const data = doc.data();
+              return {
+                id: doc.id,
+                ...data,
+                createdAt: data.createdAt?.toDate() || new Date(),
+                splits: data.splits || [],
+                participants: data.participants || [],
+                type: data.type || 'expense'
+              } as Expense;
+            }),
+            { id: expenseRef.id, ...expenseData }
+          ];
 
-        // Calculate new balances
-        const balances = calculateBalances(allExpenses, params.participants);
-        const simplifiedDebts = simplifyDebts(balances);
+          // Calculate new balances
+          const balances = calculateBalances(params.participants, allExpenses);
+          const simplifiedDebts = simplifyDebts(balances);
 
-        console.log('Calculated Balances:', {
-          expenses: allExpenses,
-          balances,
-          simplifiedDebts
-        });
+          console.log('Calculated Balances:', {
+            expenses: allExpenses.length,
+            balances,
+            simplifiedDebts
+          });
 
-        // Update group with new balances and total
-        batch.update(groupRef, {
-          balances: balances.map(b => ({
-            userId: b.userId,
-            amount: Number(b.amount.toFixed(2))
-          })),
-          simplifiedDebts: simplifiedDebts.map(d => ({
-            from: d.from,
-            to: d.to,
-            amount: Number(d.amount.toFixed(2))
-          })),
-          totalExpenses: firestore.FieldValue.increment(params.amount)
-        });
+          // Update group with new balances and total
+          batch.update(groupRef, {
+            balances: balances.map(b => ({
+              userId: b.userId,
+              amount: Number(b.amount.toFixed(2))
+            })),
+            simplifiedDebts: simplifiedDebts.map(d => ({
+              from: d.from,
+              to: d.to,
+              amount: Number(d.amount.toFixed(2))
+            })),
+            totalExpenses: firestore.FieldValue.increment(params.amount)
+          });
+        }
       }
-    }
 
-    await batch.commit();
-    return { id: expenseRef.id, ...expenseData } as Expense;
+      await batch.commit();
+      console.log('Expense added successfully:', expenseRef.id);
+      
+      return { id: expenseRef.id, ...expenseData } as Expense;
+    } catch (error) {
+      console.error('Error adding expense:', error);
+      throw error;
+    }
   }
 );
 
@@ -233,6 +276,8 @@ export const recordPayment = createAsyncThunk(
   'expenses/recordPayment',
   async ({ groupId, payerId, payeeId, amount }: { groupId: string; payerId: string; payeeId: string; amount: number }) => {
     try {
+      console.log('Recording payment:', { groupId, payerId, payeeId, amount });
+      
       const db = firestore();
       
       // Start a batch operation
@@ -250,6 +295,7 @@ export const recordPayment = createAsyncThunk(
       };
       
       batch.set(paymentRef, paymentData);
+      console.log('Created payment record:', paymentRef.id);
 
       // Create a virtual expense to represent the payment
       const expenseRef = db.collection('expenses').doc();
@@ -258,7 +304,8 @@ export const recordPayment = createAsyncThunk(
         description: 'Payment Settlement',
         amount: amount,
         paidBy: payerId,
-        splitType: 'EXACT',
+        payeeId: payeeId,
+        splitType: 'EXACT' as SplitType,
         participants: [payerId, payeeId],
         splits: [
           {
@@ -271,57 +318,97 @@ export const recordPayment = createAsyncThunk(
       };
       
       batch.set(expenseRef, expenseData);
+      console.log('Created payment expense:', expenseRef.id);
 
-      // Update group balances
-      const groupRef = db.collection('groups').doc(groupId);
-      const groupDoc = await groupRef.get();
-      
-      if (groupDoc.exists) {
-        const groupData = groupDoc.data();
+      try {
+        // Update group balances
+        const groupRef = db.collection('groups').doc(groupId);
+        const groupDoc = await groupRef.get();
         
-        if (groupData) {
-          // Get current balances
-          const currentBalances = groupData.balances || [];
+        if (groupDoc.exists) {
+          const groupData = groupDoc.data();
           
-          // Update balances for payer and payee
-          const updatedBalances = currentBalances.map((balance: Balance) => {
-            if (balance.userId === payerId) {
-              // Payer's balance increases (they owe less)
-              return {
-                ...balance,
-                amount: Number((balance.amount + amount).toFixed(2))
-              };
-            } else if (balance.userId === payeeId) {
-              // Payee's balance decreases (they are owed less)
-              return {
-                ...balance,
-                amount: Number((balance.amount - amount).toFixed(2))
-              };
+          if (groupData) {
+            // Get all expenses including the new payment
+            let expensesSnapshot;
+            
+            try {
+              // Try with ordering (requires index)
+              expensesSnapshot = await db
+                .collection('expenses')
+                .where('groupId', '==', groupId)
+                .get();
+            } catch (indexError) {
+              console.warn('Index error in recordPayment, using simple query:', indexError);
+              
+              // Fallback to simple query without ordering
+              expensesSnapshot = await db
+                .collection('expenses')
+                .where('groupId', '==', groupId)
+                .get();
             }
-            return balance;
-          });
-          
-          // Recalculate simplified debts
-          const simplifiedDebts = simplifyDebts(updatedBalances);
-          
-          // Update group with new balances and simplified debts
-          batch.update(groupRef, {
-            balances: updatedBalances,
-            simplifiedDebts: simplifiedDebts.map(d => ({
-              from: d.from,
-              to: d.to,
-              amount: Number(d.amount.toFixed(2))
-            }))
-          });
+              
+            console.log(`Found ${expensesSnapshot.docs.length} existing expenses for group ${groupId}`);
+            
+            const allExpenses = expensesSnapshot.docs.map(doc => {
+              const data = doc.data();
+              return {
+                id: doc.id,
+                ...data,
+                createdAt: data.createdAt?.toDate() || new Date(),
+                splits: data.splits || [],
+                participants: data.participants || [],
+                type: data.type || 'expense',
+                payeeId: data.payeeId
+              } as Expense;
+            });
+            
+            // Add the new payment expense
+            allExpenses.push({
+              id: expenseRef.id,
+              ...expenseData,
+              createdAt: new Date()
+            } as unknown as Expense);
+            
+            console.log('Total expenses for balance calculation:', allExpenses.length);
+            
+            // Recalculate all balances from scratch
+            const members = groupData.members || [];
+            const balances = calculateBalances(
+              members.map((m: { id: string }) => m.id), 
+              allExpenses
+            );
+            const simplifiedDebts = simplifyDebts(balances);
+            
+            console.log('Updated balances:', balances.length);
+            console.log('Updated simplified debts:', simplifiedDebts.length);
+            
+            // Update group with new balances and simplified debts
+            batch.update(groupRef, {
+              balances: balances.map(b => ({
+                userId: b.userId,
+                amount: Number(b.amount.toFixed(2))
+              })),
+              simplifiedDebts: simplifiedDebts.map(d => ({
+                from: d.from,
+                to: d.to,
+                amount: Number(d.amount.toFixed(2))
+              }))
+            });
+          }
         }
+      } catch (groupUpdateError) {
+        console.error('Error updating group balances:', groupUpdateError);
+        // Continue with the payment recording even if balance update fails
       }
 
       // Commit all operations
       await batch.commit();
+      console.log('Payment successfully recorded');
 
-      return { success: true };
+      return { success: true, paymentId: expenseRef.id };
     } catch (error) {
-      console.error('Error recording payment:', error);
+      console.error('Error recording payment:', typeof error === 'object' ? JSON.stringify(error) : error);
       throw error;
     }
   }
