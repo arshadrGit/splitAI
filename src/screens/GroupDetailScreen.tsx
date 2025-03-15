@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  View, 
-  StyleSheet, 
-  FlatList, 
-  Alert, 
+import {
+  View,
+  StyleSheet,
+  FlatList,
+  Alert,
   ActivityIndicator,
   TouchableOpacity,
   Modal,
@@ -30,6 +30,7 @@ import AddExpenseForm from '../components/AddExpenseForm';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { auth } from '../firebase/firebaseConfig';
+import { useIsFocused } from '@react-navigation/native';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'GroupDetail'>;
 
@@ -38,6 +39,7 @@ const { width, height } = Dimensions.get('window');
 export const GroupDetailScreen = ({ route, navigation }: Props) => {
   const { groupId } = route.params;
   const dispatch = useDispatch<AppDispatch>();
+  const isFocused = useIsFocused();
   const { theme } = useTheme();
   const { currentGroup, loading: groupLoading } = useSelector((state: RootState) => state.groups);
   const { expenses, loading: expensesLoading } = useSelector((state: RootState) => state.expenses);
@@ -55,13 +57,12 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
   const [paymentAmount, setPaymentAmount] = useState(0);
   const [paymentModalVisible, setPaymentModalVisible] = useState(false);
 
-  useEffect(() => {
-    if (groupId) {
-      console.log('Fetching data for group ID:', groupId);
-      dispatch(fetchGroupById(groupId));
-      dispatch(fetchExpenses(groupId));
-    }
-  }, [dispatch, groupId]);
+  // useEffect(() => {
+  //   if (groupId && !showAddExpense) {
+  //     dispatch(fetchGroupById(groupId));
+  //     dispatch(fetchExpenses(groupId));
+  //   }
+  // }, [dispatch, groupId, showAddExpense]);
 
   // Add this effect to refresh expenses when navigating between groups
   useEffect(() => {
@@ -91,7 +92,7 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
         members: currentGroup.members,
         balances: currentGroup.balances,
       });
-      
+
       // Debug expenses data
       console.log('All Expenses:', expenses.map(e => ({
         id: e.id,
@@ -102,11 +103,11 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
         payeeId: e.payeeId,
         createdAt: e.createdAt
       })));
-      
+
       // Debug filtered expenses
       const groupExpenses = expenses.filter(e => e.groupId === groupId);
       console.log('Filtered Expenses for this group:', groupExpenses.length);
-      
+
       // Debug payment transactions
       const paymentTransactions = expenses.filter(e => e.type === 'payment' && e.groupId === groupId);
       console.log('Payment Transactions:', paymentTransactions.length, paymentTransactions);
@@ -136,7 +137,7 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
   const onRefresh = useCallback(() => {
     console.log('Manual refresh triggered');
     setRefreshing(true);
-    
+
     Promise.all([
       dispatch(fetchGroupById(groupId)),
       dispatch(fetchExpenses(groupId))
@@ -152,21 +153,21 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
   const renderExpenseItem = ({ item }: { item: Expense }) => {
     const createdAt = new Date(item.createdAt);
     const formattedDate = `${createdAt.getMonth() + 1}/${createdAt.getDate()}/${createdAt.getFullYear()}`;
-    
+
     // Handle payment transactions differently
     if (item.type === 'payment') {
       const isPayer = item.paidBy === user?.id;
       const isPayee = item.payeeId === user?.id;
-      
+
       // Get display names for users
       const getDisplayName = (userId: string) => {
         if (userId === user?.id) return 'You';
         return userId; // In a real app, you'd look up the user's display name
       };
-      
+
       const payerName = getDisplayName(item.paidBy);
       const payeeName = getDisplayName(item.payeeId || '');
-      
+
       return (
         <Card style={[styles.expenseCard, { borderLeftColor: theme.colors.success, borderLeftWidth: 4 }]}>
           <View style={styles.expenseHeader}>
@@ -181,9 +182,9 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
               </ThemeText>
             </View>
             <View style={styles.expenseBalance}>
-              <ThemeText 
+              <ThemeText
                 style={[
-                  styles.balanceText, 
+                  styles.balanceText,
                   { color: isPayer ? theme.colors.error : isPayee ? theme.colors.success : theme.colors.text }
                 ]}
               >
@@ -194,17 +195,17 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
         </Card>
       );
     }
-    
+
     // Regular expense handling
     const isPayer = item.paidBy === user?.id;
-    
+
     // Find the user's split in this expense
     const userSplit = item.splits.find(split => split.userId === user?.id);
     const userAmount = userSplit?.amount || 0;
-    
+
     // Calculate if the user owes money or is owed money in this expense
     const userBalance = isPayer ? item.amount - userAmount : -userAmount;
-    
+
     return (
       <Swipeable
         renderRightActions={() => renderRightActions(item.id)}
@@ -223,15 +224,15 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
               </ThemeText>
             </View>
             <View style={styles.expenseBalance}>
-              <ThemeText 
+              <ThemeText
                 style={[
-                  styles.balanceText, 
+                  styles.balanceText,
                   { color: userBalance > 0 ? theme.colors.success : userBalance < 0 ? theme.colors.error : theme.colors.text }
                 ]}
               >
-                {userBalance > 0 
-                  ? `You get back $${userBalance.toFixed(2)}` 
-                  : userBalance < 0 
+                {userBalance > 0
+                  ? `You get back $${userBalance.toFixed(2)}`
+                  : userBalance < 0
                     ? `You owe $${Math.abs(userBalance).toFixed(2)}`
                     : 'Settled'}
               </ThemeText>
@@ -263,9 +264,9 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
       allBalances: balances
     });
 
-    const balanceColor = balanceAmount > 0 ? theme.colors.success : 
-                        balanceAmount < 0 ? theme.colors.error : 
-                        theme.colors.text;
+    const balanceColor = balanceAmount > 0 ? theme.colors.success :
+      balanceAmount < 0 ? theme.colors.error :
+        theme.colors.text;
 
     return (
       <Card style={styles.memberCard}>
@@ -277,8 +278,8 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
         </View>
         <ThemeText style={[styles.memberBalance, { color: balanceColor }]}>
           {balanceAmount === 0 ? 'All settled' :
-           balanceAmount > 0 ? `Gets back $${Math.abs(balanceAmount).toFixed(2)}` :
-           `Owes $${Math.abs(balanceAmount).toFixed(2)}`}
+            balanceAmount > 0 ? `Gets back $${Math.abs(balanceAmount).toFixed(2)}` :
+              `Owes $${Math.abs(balanceAmount).toFixed(2)}`}
         </ThemeText>
       </Card>
     );
@@ -287,7 +288,7 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
   const renderSettlementItem = ({ item: debt }: { item: Debt }) => {
     const isDebtor = debt.from === user?.id;
     const isCreditor = debt.to === user?.id;
-    
+
     if (!isDebtor && !isCreditor) return null;
 
     // Get display names for users
@@ -302,20 +303,20 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
     return (
       <Card style={styles.settlementCard}>
         <View style={styles.settlementInfo}>
-          <Icon 
-            name={isDebtor ? "arrow-up-circle" : "arrow-down-circle"} 
-            size={24} 
-            color={isDebtor ? theme.colors.error : theme.colors.success} 
+          <Icon
+            name={isDebtor ? "arrow-up-circle" : "arrow-down-circle"}
+            size={24}
+            color={isDebtor ? theme.colors.error : theme.colors.success}
           />
           <ThemeText style={styles.settlementText}>
-            {isDebtor ? 
-              `You owe ${toName}` : 
+            {isDebtor ?
+              `You owe ${toName}` :
               `${fromName} owes you`}
           </ThemeText>
         </View>
         <View style={styles.settlementAmount}>
-          <ThemeText style={[styles.settlementValue, { 
-            color: isDebtor ? theme.colors.error : theme.colors.success 
+          <ThemeText style={[styles.settlementValue, {
+            color: isDebtor ? theme.colors.error : theme.colors.success
           }]}>
             ${debt.amount.toFixed(2)}
           </ThemeText>
@@ -346,7 +347,7 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
       Alert.alert('Error', 'No debt selected or user not logged in');
       return;
     }
-    
+
     try {
       // Validate payment amount
       const amount = parseFloat(settlementAmount);
@@ -387,12 +388,12 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
         ).unwrap();
 
         console.log('Payment recorded successfully:', result);
-        
+
         // Close the modal and reset the state
         setShowSettlementModal(false);
         setSelectedDebt(null);
         setSettlementAmount('');
-        
+
         // Refresh data
         try {
           await Promise.all([
@@ -401,20 +402,20 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
           ]);
           console.log('Data refreshed after payment');
         } catch (refreshError) {
-          console.error('Error refreshing data after payment:', 
+          console.error('Error refreshing data after payment:',
             typeof refreshError === 'object' ? JSON.stringify(refreshError) : refreshError);
           // Continue even if refresh fails
         }
-        
+
         // Show success message
         Alert.alert('Success', 'Payment recorded successfully');
       } catch (paymentError) {
-        console.error('Error recording payment:', 
+        console.error('Error recording payment:',
           typeof paymentError === 'object' ? JSON.stringify(paymentError) : paymentError);
         Alert.alert('Error', 'Failed to record payment. Please try again.');
       }
     } catch (error) {
-      console.error('Unexpected error in handleRecordPayment:', 
+      console.error('Unexpected error in handleRecordPayment:',
         typeof error === 'object' ? JSON.stringify(error) : error);
       Alert.alert('Error', 'An unexpected error occurred. Please try again.');
     } finally {
@@ -430,8 +431,8 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
       onRequestClose={() => setShowAddExpense(false)}
     >
       <View style={[styles.modalContainer, { backgroundColor: theme.colors.background }]}>
-        <Header 
-          title="Add Expense" 
+        <Header
+          title="Add Expense"
           leftIcon="close"
           onLeftPress={() => setShowAddExpense(false)}
         />
@@ -441,6 +442,7 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
           onSuccess={() => {
             setShowAddExpense(false);
             dispatch(fetchExpenses(groupId));
+            dispatch(fetchGroupById(groupId));
             Alert.alert('Success', 'Expense added successfully');
           }}
           onCancel={() => setShowAddExpense(false)}
@@ -456,8 +458,8 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
       onRequestClose={() => setShowMembers(false)}
     >
       <View style={[styles.modalContainer, { backgroundColor: theme.colors.background }]}>
-        <Header 
-          title="Group Members" 
+        <Header
+          title="Group Members"
           leftIcon="close"
           onLeftPress={() => setShowMembers(false)}
         />
@@ -478,17 +480,17 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
       onRequestClose={() => setShowSettleUp(false)}
     >
       <View style={[styles.modalContainer, { backgroundColor: theme.colors.background }]}>
-        <Header 
-          title="Settle Up" 
+        <Header
+          title="Settle Up"
           leftIcon="close"
           onLeftPress={() => setShowSettleUp(false)}
         />
-        
+
         <View style={styles.settleUpInfo}>
           <ThemeText style={styles.settleUpInfoText}>
             These are the simplified payments that will settle all debts in the group with the minimum number of transactions.
           </ThemeText>
-          
+
           <Card style={styles.helpCard}>
             <View style={styles.helpHeader}>
               <Icon name="information-outline" size={20} color={theme.colors.primary} />
@@ -508,7 +510,7 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
             </ThemeText>
           </Card>
         </View>
-        
+
         <FlatList
           data={currentGroup?.simplifiedDebts || []}
           renderItem={renderSettlementItem}
@@ -535,22 +537,22 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
       animationType="fade"
       onRequestClose={() => setShowSettlementModal(false)}
     >
-      <TouchableOpacity 
-        style={styles.modalOverlay} 
-        activeOpacity={1} 
+      <TouchableOpacity
+        style={styles.modalOverlay}
+        activeOpacity={1}
         onPress={() => setShowSettlementModal(false)}
       >
         <View style={[styles.settlementModalContent, { backgroundColor: theme.colors.card }]}>
           <ThemeText variant="title" style={styles.modalTitle}>
             Settle Up
           </ThemeText>
-          
+
           {selectedDebt && (
             <>
               <View style={styles.settlementDetails}>
                 <ThemeText style={styles.settlementLabel}>
-                  {selectedDebt.from === user?.id ? 
-                    `You are paying ${selectedDebt.to}` : 
+                  {selectedDebt.from === user?.id ?
+                    `You are paying ${selectedDebt.to}` :
                     `${selectedDebt.from} is paying you`}
                 </ThemeText>
                 <View style={styles.amountInputContainer}>
@@ -591,9 +593,9 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
 
   const renderSettlementHistory = () => {
     const settlementTransactions = expenses.filter(expense => expense.type === 'payment' && expense.groupId === groupId);
-    
+
     console.log('Settlement Transactions for history:', settlementTransactions.length);
-    
+
     if (settlementTransactions.length === 0) {
       return (
         <View style={styles.emptyState}>
@@ -613,16 +615,16 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
           const isPayee = item.payeeId === user?.id;
           const createdAt = new Date(item.createdAt);
           const formattedDate = `${createdAt.getMonth() + 1}/${createdAt.getDate()}/${createdAt.getFullYear()}`;
-          
+
           // Get display names for users
           const getDisplayName = (userId: string) => {
             if (userId === user?.id) return 'You';
             return userId; // In a real app, you'd look up the user's display name
           };
-          
+
           const payerName = getDisplayName(item.paidBy);
           const payeeName = getDisplayName(item.payeeId || '');
-          
+
           return (
             <Card style={[styles.settlementCard, { borderLeftColor: theme.colors.success, borderLeftWidth: 4 }]}>
               <View style={styles.settlementHeader}>
@@ -633,7 +635,7 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
                 <ThemeText variant="body">
                   {`${payerName} paid ${payeeName}`}
                 </ThemeText>
-                <ThemeText 
+                <ThemeText
                   style={[
                     styles.settlementValue,
                     { color: isPayer ? theme.colors.error : isPayee ? theme.colors.success : theme.colors.text }
@@ -659,8 +661,8 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
       onRequestClose={() => setShowSettlementHistory(false)}
     >
       <View style={[styles.modalContainer, { backgroundColor: theme.colors.background }]}>
-        <Header 
-          title="Settlement History" 
+        <Header
+          title="Settlement History"
           leftIcon="close"
           onLeftPress={() => setShowSettlementHistory(false)}
           rightIcon="refresh"
@@ -674,8 +676,8 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
   if (groupLoading || !currentGroup) {
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-        <Header 
-          title="Loading..." 
+        <Header
+          title="Loading..."
           leftIcon="arrow-left"
           onLeftPress={() => navigation.goBack()}
         />
@@ -696,7 +698,7 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
     const userId = user?.id || '';
     // First, ensure the expense belongs to this group
     if (expense.groupId !== groupId) return false;
-    
+
     // Then apply the user's filter
     if (expenseFilter === 'all') return true;
     if (expenseFilter === 'paid') return expense.paidBy === userId;
@@ -705,7 +707,7 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
   });
 
   // Sort expenses by date (most recent first)
-  const sortedExpenses = [...filteredExpenses].sort((a, b) => 
+  const sortedExpenses = [...filteredExpenses].sort((a, b) =>
     new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
 
@@ -753,8 +755,8 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-        <Header 
-          title={currentGroup.name || 'Group'} 
+        <Header
+          title={currentGroup.name || 'Group'}
           leftIcon="arrow-left"
           onLeftPress={() => navigation.goBack()}
         />
@@ -768,15 +770,15 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
               </ThemeText>
             </Card>
 
-            <Card style={[styles.actionCard, { 
-              backgroundColor: userBalance > 0 ? theme.colors.success : 
-                            userBalance < 0 ? theme.colors.error :
-                            theme.colors.card
+            <Card style={[styles.actionCard, {
+              backgroundColor: userBalance > 0 ? theme.colors.success :
+                userBalance < 0 ? theme.colors.error :
+                  theme.colors.card
             }]}>
               <ThemeText style={styles.actionTitle1}>
                 {userBalance > 0 ? 'You are owed' :
-                 userBalance < 0 ? 'You owe' :
-                 'You are settled up'}
+                  userBalance < 0 ? 'You owe' :
+                    'You are settled up'}
               </ThemeText>
               <ThemeText style={styles.actionAmount1}>
                 ${Math.abs(userBalance).toFixed(2)}
@@ -790,48 +792,48 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
             <View style={styles.expensesHeader}>
               <ThemeText variant="title">Recent Expenses</ThemeText>
               <View style={styles.filterContainer}>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[
-                    styles.filterButton, 
+                    styles.filterButton,
                     expenseFilter === 'all' && styles.activeFilterButton
                   ]}
                   onPress={() => setExpenseFilter('all')}
                 >
-                  <ThemeText 
+                  <ThemeText
                     style={[
-                      styles.filterText, 
+                      styles.filterText,
                       expenseFilter === 'all' && styles.activeFilterText
                     ]}
                   >
                     All
                   </ThemeText>
                 </TouchableOpacity>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[
-                    styles.filterButton, 
+                    styles.filterButton,
                     expenseFilter === 'paid' && styles.activeFilterButton
                   ]}
                   onPress={() => setExpenseFilter('paid')}
                 >
-                  <ThemeText 
+                  <ThemeText
                     style={[
-                      styles.filterText, 
+                      styles.filterText,
                       expenseFilter === 'paid' && styles.activeFilterText
                     ]}
                   >
                     Paid
                   </ThemeText>
                 </TouchableOpacity>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[
-                    styles.filterButton, 
+                    styles.filterButton,
                     expenseFilter === 'received' && styles.activeFilterButton
                   ]}
                   onPress={() => setExpenseFilter('received')}
                 >
-                  <ThemeText 
+                  <ThemeText
                     style={[
-                      styles.filterText, 
+                      styles.filterText,
                       expenseFilter === 'received' && styles.activeFilterText
                     ]}
                   >
@@ -869,7 +871,7 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
                   }
                 />
                 {sortedExpenses.length > 5 && (
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={styles.viewAllButton}
                     onPress={() => setShowAllExpenses(!showAllExpenses)}
                   >
@@ -912,7 +914,7 @@ const styles = StyleSheet.create({
   actionCard: {
     padding: 10,
     marginRight: 12,
-    width: width * 0.5,
+    width: width * 0.45,
     minHeight: 80,
     justifyContent: 'center',
   },
