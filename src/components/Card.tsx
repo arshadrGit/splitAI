@@ -10,7 +10,7 @@ interface CardProps extends ViewProps {
 export const Card: React.FC<CardProps> = ({ 
   children, 
   style, 
-  elevation = 2,
+  elevation = 1,
   outlined = false,
   ...props 
 }) => {
@@ -24,7 +24,7 @@ export const Card: React.FC<CardProps> = ({
           backgroundColor: theme.colors.card,
           borderColor: outlined ? theme.colors.border : 'transparent',
           shadowOpacity: theme.dark ? 0.3 : 0.1,
-          elevation: elevation,
+          // elevation: elevation,
         },
         style,
       ]}
@@ -41,7 +41,7 @@ const styles = StyleSheet.create({
     padding: 16,
     borderWidth: 1,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 1, height: 1 },
     shadowRadius: 6,
     marginVertical: 8,
   },

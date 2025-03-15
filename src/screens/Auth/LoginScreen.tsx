@@ -76,18 +76,18 @@ export const LoginScreen = ({ navigation }: any) => {
   };
 
   return (
-    <ImageBackground
-      source={require('../../assets/images/background.jpeg')}
-      style={styles.backgroundImage}
-      resizeMode="cover"
-    >
+    // <ImageBackground
+    //   source={require('../../assets/images/background.jpeg')}
+    //   style={[styles.backgroundImage,{backgroundColor: theme.colors.card}]}
+    //   resizeMode="cover"
+    // >
       <KeyboardAvoidingView 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.container}
+        style={[styles.container,{backgroundColor: theme.colors.background}]}
       >
         <View style={styles.logoContainer}>
           <Image 
-            source={require('../../assets/images/logo.jpeg')} 
+            source={require('../../assets/images/logo.png')} 
             style={styles.logo}
             resizeMode="contain"
           />
@@ -95,7 +95,7 @@ export const LoginScreen = ({ navigation }: any) => {
           <ThemeText style={styles.tagline}>Split bills, not friendships</ThemeText>
         </View>
         
-        <Card style={styles.card} elevation={4}>
+        <Card style={styles.card} elevation={1}>
           <ThemeText variant="title" style={styles.title}>Welcome Back</ThemeText>
           
           <View style={styles.inputContainer}>
@@ -169,7 +169,7 @@ export const LoginScreen = ({ navigation }: any) => {
           </View>
         </Card>
       </KeyboardAvoidingView>
-    </ImageBackground>
+    // </ImageBackground>
   );
 };
 
@@ -183,7 +183,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     padding: 20,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    // backgroundColor: 'rgba(0,0,0,0.4)',
   },
   logoContainer: {
     alignItems: 'center',
@@ -195,13 +195,13 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   appName: {
-    color: '#FFFFFF',
+    // color: '#FFFFFF',
     fontWeight: 'bold',
     textAlign: 'center',
     marginBottom: 5,
   },
   tagline: {
-    color: '#FFFFFF',
+    // color: '#FFFFFF',
     fontSize: 16,
     textAlign: 'center',
   },

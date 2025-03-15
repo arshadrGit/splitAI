@@ -104,19 +104,19 @@ export const SignupScreen = ({ navigation }: any) => {
   };
 
   return (
-    <ImageBackground
-    source={require('../../assets/images/background.jpeg')}
-      style={styles.backgroundImage}
-      resizeMode="cover"
-    >
+    // <ImageBackground
+    // source={require('../../assets/images/background.jpeg')}
+    //   style={styles.backgroundImage}
+    //   resizeMode="cover"
+    // >
       <KeyboardAvoidingView 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.container}
+        style={[styles.container,{backgroundColor: theme.colors.background}]}
       >
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <View style={styles.logoContainer}>
             <Image 
-              source={require('../../assets/images/logo.jpeg')} 
+              source={require('../../assets/images/logo.png')} 
               style={styles.logo}
               resizeMode="contain"
             />
@@ -243,7 +243,7 @@ export const SignupScreen = ({ navigation }: any) => {
           </Card>
         </ScrollView>
       </KeyboardAvoidingView>
-    </ImageBackground>
+    // </ImageBackground>
   );
 };
 
@@ -255,7 +255,7 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    // backgroundColor: 'rgba(0,0,0,0.4)',
   },
   scrollContent: {
     flexGrow: 1,
@@ -272,7 +272,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   appName: {
-    color: '#FFFFFF',
+    // color: '#FFFFFF',
     fontWeight: 'bold',
     textAlign: 'center',
   },

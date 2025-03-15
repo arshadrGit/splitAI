@@ -773,12 +773,12 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
                             userBalance < 0 ? theme.colors.error :
                             theme.colors.card
             }]}>
-              <ThemeText style={styles.actionTitle}>
+              <ThemeText style={styles.actionTitle1}>
                 {userBalance > 0 ? 'You are owed' :
                  userBalance < 0 ? 'You owe' :
                  'You are settled up'}
               </ThemeText>
-              <ThemeText style={styles.actionAmount}>
+              <ThemeText style={styles.actionAmount1}>
                 ${Math.abs(userBalance).toFixed(2)}
               </ThemeText>
             </Card>
@@ -910,10 +910,10 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   actionCard: {
-    padding: 16,
+    padding: 10,
     marginRight: 12,
-    width: width * 0.7,
-    minHeight: 100,
+    width: width * 0.5,
+    minHeight: 80,
     justifyContent: 'center',
   },
   actionTitle: {
@@ -922,6 +922,15 @@ const styles = StyleSheet.create({
   },
   actionAmount: {
     color: '#FFFFFF',
+    fontSize: 24,
+    fontWeight: 'bold',
+  },
+  actionTitle1: {
+    // color: '#FFFFFF',
+    marginBottom: 8,
+  },
+  actionAmount1: {
+    // color: '#FFFFFF',
     fontSize: 24,
     fontWeight: 'bold',
   },
@@ -1008,9 +1017,9 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   settlementCard: {
-    flexDirection: 'row',
+    // flexDirection: 'row',
+    // alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
     padding: 16,
     marginBottom: 12,
   },
