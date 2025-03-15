@@ -763,25 +763,48 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
 
         <View style={styles.content}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.actionCards}>
-            <Card style={[styles.actionCard, { backgroundColor: theme.colors.primary }]}>
+            <Card style={styles.actionCard}>
+              <Icon 
+                name="chart-timeline-variant" 
+                size={20} 
+                color={theme.colors.primary} 
+                style={styles.actionIcon}
+              />
               <ThemeText style={styles.actionTitle}>Total Expenses</ThemeText>
-              <ThemeText style={styles.actionAmount}>
+              <ThemeText style={[styles.actionAmount, { color: theme.colors.text }]}>
                 ${(currentGroup.totalExpenses || 0).toFixed(2)}
               </ThemeText>
+              <ThemeText style={styles.actionSubtext}>Group total</ThemeText>
             </Card>
 
-            <Card style={[styles.actionCard, {
-              backgroundColor: userBalance > 0 ? theme.colors.success :
-                userBalance < 0 ? theme.colors.error :
-                  theme.colors.card
+            <Card style={[styles.actionCard, { 
+              borderLeftWidth: 3,
+              borderLeftColor: userBalance > 0 ? theme.colors.success : 
+                              userBalance < 0 ? theme.colors.error :
+                              theme.colors.primary
             }]}>
-              <ThemeText style={styles.actionTitle1}>
-                {userBalance > 0 ? 'You are owed' :
-                  userBalance < 0 ? 'You owe' :
-                    'You are settled up'}
-              </ThemeText>
-              <ThemeText style={styles.actionAmount1}>
+              <Icon 
+                name={userBalance > 0 ? "arrow-down-circle" : 
+                      userBalance < 0 ? "arrow-up-circle" : 
+                      "check-circle"} 
+                size={20} 
+                color={userBalance > 0 ? theme.colors.success : 
+                       userBalance < 0 ? theme.colors.error :
+                       theme.colors.primary} 
+                style={styles.actionIcon}
+              />
+              <ThemeText style={styles.actionTitle}>Your Balance</ThemeText>
+              <ThemeText style={[styles.actionAmount, { 
+                color: userBalance > 0 ? theme.colors.success : 
+                       userBalance < 0 ? theme.colors.error :
+                       theme.colors.text
+              }]}>
                 ${Math.abs(userBalance).toFixed(2)}
+              </ThemeText>
+              <ThemeText style={styles.actionSubtext}>
+                {userBalance > 0 ? 'You are owed' :
+                 userBalance < 0 ? 'You owe' :
+                 'All settled up'}
               </ThemeText>
             </Card>
           </ScrollView>
@@ -910,43 +933,41 @@ const styles = StyleSheet.create({
   actionCards: {
     flexGrow: 0,
     marginBottom: 16,
+    paddingHorizontal: 4,
   },
   actionCard: {
-    padding: 10,
-    marginRight: 12,
+    padding: 12,
+    marginRight: 10,
     width: width * 0.45,
-    minHeight: 80,
-    justifyContent: 'center',
+    height: 100,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
   },
   actionTitle: {
-    color: '#FFFFFF',
-    marginBottom: 8,
+    fontSize: 12,
+    marginBottom: 4,
+    opacity: 0.7,
   },
   actionAmount: {
-    color: '#FFFFFF',
-    fontSize: 24,
-    fontWeight: 'bold',
+    fontSize: 20,
+    fontWeight: '600',
+    marginBottom: 2,
   },
-  actionTitle1: {
-    // color: '#FFFFFF',
+  actionSubtext: {
+    fontSize: 11,
+    opacity: 0.6,
+  },
+  actionIcon: {
     marginBottom: 8,
-  },
-  actionAmount1: {
-    // color: '#FFFFFF',
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  actionButtons: {
-    marginBottom: 24,
-  },
-  actionButtonRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  actionButton: {
-    flex: 1,
-    marginHorizontal: 4,
+    fontSize: 18,
   },
   expensesContainer: {
     flex: 1,
@@ -1019,8 +1040,6 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   settlementCard: {
-    // flexDirection: 'row',
-    // alignItems: 'center',
     justifyContent: 'space-between',
     padding: 16,
     marginBottom: 12,
@@ -1182,6 +1201,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  actionButtons: {
+    marginBottom: 24,
+  },
+  actionButtonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  actionButton: {
+    flex: 1,
+    marginHorizontal: 4,
   },
 });
 

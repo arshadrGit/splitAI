@@ -35,92 +35,123 @@ export const fetchActivities = createAsyncThunk(
     const activities: ActivityItem[] = [];
 
     // Fetch all expenses where the user is involved (either paid or part of splits)
-    const expensesSnapshot = await db
-      .collection('expenses')
-      .where('participants', 'array-contains', userId)
-      .orderBy('createdAt', 'desc')
-      .get();
-
+    let expensesSnapshot;
+    try {
+      // Remove the orderBy clause to avoid requiring a composite index
+      expensesSnapshot = await db
+        .collection('expenses')
+        .where('participants', 'array-contains', userId)
+        .get();
+      
+      console.log(`Found ${expensesSnapshot.docs.length} expenses for user ${userId}`);
+    } catch (error) {
+      console.error('Error fetching expenses:', 
+        error instanceof Error ? error.message : 'Unknown error');
+      expensesSnapshot = { docs: [] };
+    }
+    
     // Fetch all payments where user is either payer or payee
     let paymentsSnapshot;
     try {
+      // Remove the orderBy clause to avoid requiring a composite index
       paymentsSnapshot = await db
         .collection('payments')
         .where('participants', 'array-contains', userId)
-        .orderBy('createdAt', 'desc')
         .get();
+      
+      console.log(`Found ${paymentsSnapshot.docs.length} payments for user ${userId}`);
     } catch (error) {
-      console.log('No payments yet:', error);
+      console.error('Error fetching payments:', 
+        error instanceof Error ? error.message : 'Unknown error');
       paymentsSnapshot = { docs: [] };
     }
 
     // Process expenses
     for (const doc of expensesSnapshot.docs) {
-      const expense = doc.data();
-      const groupDoc = expense.groupId ? await db.collection('groups').doc(expense.groupId).get() : null;
-      const paidByUser = expense.paidBy === userId;
-      const userSplit = expense.splits.find((split: any) => split.userId === userId);
-      
-      if (userSplit) {
-        let balance = 0;
-        if (paidByUser) {
-          // If user paid, they are owed the total amount minus their share
-          balance = expense.amount - userSplit.amount;
-        } else {
-          // If user didn't pay, they owe their share
-          balance = -userSplit.amount;
+      try {
+        const expense = doc.data();
+        const groupDoc = expense.groupId ? await db.collection('groups').doc(expense.groupId).get() : null;
+        const paidByUser = expense.paidBy === userId;
+        const userSplit = expense.splits.find((split: any) => split.userId === userId);
+
+        if (userSplit) {
+          let balance = 0;
+          if (paidByUser) {
+            // If user paid, they are owed the total amount minus their share
+            balance = expense.amount - userSplit.amount;
+          } else {
+            // If user didn't pay, they owe their share
+            balance = -userSplit.amount;
+          }
+
+          // Get payer's display name
+          let payerName = 'Unknown User';
+          try {
+            const payerDoc = await db.collection('users').doc(expense.paidBy).get();
+            payerName = payerDoc.exists ? (payerDoc.data()?.displayName || 'Unknown User') : 'Unknown User';
+          } catch (userError) {
+            console.warn(`Could not fetch user ${expense.paidBy}:`, userError);
+          }
+
+          activities.push({
+            id: doc.id,
+            type: 'expense',
+            description: expense.description,
+            amount: expense.amount,
+            groupId: expense.groupId,
+            groupName: groupDoc?.data()?.name,
+            userId: userId,
+            paidBy: paidByUser ? 'You' : payerName,
+            createdAt: expense.createdAt?.toDate() || new Date(),
+            isGroupActivity: !!expense.groupId,
+            balance: balance
+          });
         }
-
-        // Get payer's display name
-        const payerDoc = await db.collection('users').doc(expense.paidBy).get();
-        const payerName = payerDoc.data()?.displayName || 'Unknown User';
-
-        activities.push({
-          id: doc.id,
-          type: 'expense',
-          description: expense.description,
-          amount: expense.amount,
-          groupId: expense.groupId,
-          groupName: groupDoc?.data()?.name,
-          userId: userId,
-          paidBy: paidByUser ? 'You' : payerName,
-          createdAt: expense.createdAt.toDate(),
-          isGroupActivity: !!expense.groupId,
-          balance: balance
-        });
+      } catch (expenseError) {
+        console.error('Error processing expense:', expenseError);
       }
     }
 
     // Process payments
     for (const doc of paymentsSnapshot.docs) {
-      const payment = doc.data();
-      const groupDoc = payment.groupId ? await db.collection('groups').doc(payment.groupId).get() : null;
-      const isPayer = payment.payerId === userId;
-      
-      // Get the other party's name
-      const otherPartyId = isPayer ? payment.payeeId : payment.payerId;
-      const otherPartyDoc = await db.collection('users').doc(otherPartyId).get();
-      const otherPartyName = otherPartyDoc.data()?.displayName || 'Unknown User';
+      try {
+        const payment = doc.data();
+        const groupDoc = payment.groupId ? await db.collection('groups').doc(payment.groupId).get() : null;
+        const isPayer = payment.payerId === userId;
 
-      activities.push({
-        id: doc.id,
-        type: 'payment',
-        description: 'Payment Settlement',
-        amount: payment.amount,
-        groupId: payment.groupId,
-        groupName: groupDoc?.data()?.name,
-        userId: userId,
-        paidBy: isPayer ? 'You' : otherPartyName,
-        paidTo: isPayer ? otherPartyName : 'You',
-        createdAt: payment.createdAt.toDate(),
-        isGroupActivity: !!payment.groupId,
-        balance: isPayer ? -payment.amount : payment.amount
-      });
+        // Get the other party's name
+        let otherPartyName = 'Unknown User';
+        try {
+          const otherPartyId = isPayer ? payment.payeeId : payment.payerId;
+          const otherPartyDoc = await db.collection('users').doc(otherPartyId).get();
+          otherPartyName = otherPartyDoc.exists ? (otherPartyDoc.data()?.displayName || 'Unknown User') : 'Unknown User';
+        } catch (userError) {
+          console.warn('Could not fetch other party:', userError);
+        }
+
+        activities.push({
+          id: doc.id,
+          type: 'payment',
+          description: 'Payment Settlement',
+          amount: payment.amount,
+          groupId: payment.groupId,
+          groupName: groupDoc?.data()?.name,
+          userId: userId,
+          paidBy: isPayer ? 'You' : otherPartyName,
+          paidTo: isPayer ? otherPartyName : 'You',
+          createdAt: payment.createdAt?.toDate() || new Date(),
+          isGroupActivity: !!payment.groupId,
+          balance: isPayer ? -payment.amount : payment.amount
+        });
+      } catch (paymentError) {
+        console.error('Error processing payment:', paymentError);
+      }
     }
 
-    // Sort all activities by date
+    // Sort all activities by date manually
     activities.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-
+    
+    console.log(`Returning ${activities.length} total activities`);
     return activities;
   }
 );
