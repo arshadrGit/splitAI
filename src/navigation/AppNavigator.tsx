@@ -9,6 +9,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { View, Modal, StyleSheet, TouchableWithoutFeedback } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList } from './types';
 
 // Import screens
 import LoginScreen from '../screens/Auth/LoginScreen';
@@ -26,32 +27,7 @@ import HelpSupportScreen from '../screens/HelpSupportScreen';
 import PrivacyPolicyScreen from '../screens/PrivacyPolicyScreen';
 import AboutScreen from '../screens/AboutScreen';
 import ExpensesScreen from '../screens/ExpensesScreen';
-
-// Define navigation types
-type RootStackParamList = {
-  // Auth Stack
-  Login: undefined;
-  Signup: undefined;
-  
-  // Main Stack
-  MainTabs: undefined;
-  GroupMembers: { groupId: string };
-  GroupDetail: { groupId: string; groupName: string };
-  AddExpense: { groupId: string };
-  SettleUp: { groupId: string };
-  
-  // Tab Stacks
-  HomeMain: undefined;
-  GroupsMain: undefined;
-  FriendsMain: undefined;
-  ActivityMain: undefined;
-  SettingsMain: undefined;
-  ExpensesMain: undefined;
-  EditProfile: undefined;
-  HelpSupport: undefined;
-  PrivacyPolicy: undefined;
-  About: undefined;
-};
+import FriendDetailScreen from '../screens/FriendDetailScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator();
@@ -276,6 +252,14 @@ export const AppNavigator = () => {
               component={SettleUpScreen}
               options={{ 
                 title: 'Settle Up',
+                headerBackTitle: 'Back'
+              }}
+            />
+            <Stack.Screen
+              name="FriendDetail"
+              component={FriendDetailScreen}
+              options={{ 
+                title: 'Friend Details',
                 headerBackTitle: 'Back'
               }}
             />

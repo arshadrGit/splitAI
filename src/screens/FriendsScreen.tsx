@@ -12,14 +12,20 @@ import {
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch, RootState } from '../redux/store';
 import { fetchFriends, addFriend } from '../redux/friendsSlice';
+import { fetchUserExpenses } from '../redux/expensesSlice';
 import { useTheme } from '../themes/ThemeProvider';
 import { ThemeText } from '../components/ThemeText';
 import { CustomButton } from '../components/CustomButton';
 import { Card } from '../components/Card';
 import { Header } from '../components/Header';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import { Friend } from '../types';
+import { Friend, Expense } from '../types/index';
 import SafeAreaWrapper from '../components/SafeAreaWrapper';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../navigation/types';
+
+type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 export const FriendsScreen = () => {
   const [loading, setLoading] = useState(false);
@@ -27,19 +33,43 @@ export const FriendsScreen = () => {
   const [manualName, setManualName] = useState('');
   const [manualEmail, setManualEmail] = useState('');
 
+  const navigation = useNavigation<NavigationProp>();
   const dispatch = useDispatch<AppDispatch>();
   const { theme } = useTheme();
   const { friends, loading: friendsLoading } = useSelector(
     (state: RootState) => state.friends,
   );
+  const { expenses } = useSelector((state: RootState) => state.expenses);
   const user = useSelector((state: RootState) => state.auth.user);
 
   useEffect(() => {
     if (user) {
       dispatch(fetchFriends(user.id));
+      dispatch(fetchUserExpenses(user.id));
     }
   }, [dispatch, user]);
 
+  // Calculate friend balances
+  const getFriendBalance = (friendId: string): number => {
+    if (!expenses || !expenses.length) return 0;
+    
+    let balance = 0;
+    expenses.forEach(expense => {
+      if (expense.participants.includes(friendId) || expense.paidBy === friendId) {
+        if (expense.paidBy === friendId) {
+          // Friend paid, so we might owe them
+          const userSplit = expense.splits.find(split => split.userId === user?.id);
+          balance -= userSplit?.amount || 0;
+        } else if (expense.paidBy === user?.id) {
+          // User paid, so friend might owe us
+          const friendSplit = expense.splits.find(split => split.userId === friendId);
+          balance += friendSplit?.amount || 0;
+        }
+      }
+    });
+    
+    return balance;
+  };
 
   const validateEmail = (email: string) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -96,31 +126,54 @@ export const FriendsScreen = () => {
   const renderFriendItem = ({ item }: { item: Friend }) => {
     const displayName = item.displayName || item.email || item.friendId;
     const initial = displayName.charAt(0).toUpperCase();
+    const balance = getFriendBalance(item.friendId);
 
     return (
-      <Card style={styles.friendCard}>
-        <View style={styles.friendInfo}>
-          <View style={styles.friendLeft}>
-            <View
-              style={[
-                styles.avatarContainer,
-                { backgroundColor: theme.colors.secondary },
-              ]}>
-              <ThemeText style={styles.avatarText}>{initial}</ThemeText>
-            </View>
-            <View>
-              <ThemeText variant="title" style={styles.friendName}>
-                {displayName}
-              </ThemeText>
-              {item.email && item.email !== displayName && (
-                <ThemeText variant="caption" style={styles.friendEmail}>
-                  {item.email}
+      <TouchableOpacity
+        onPress={() => navigation.navigate('FriendDetail', { 
+          friendId: item.friendId, 
+          friendName: displayName 
+        })}
+      >
+        <Card style={styles.friendCard}>
+          <View style={styles.friendInfo}>
+            <View style={styles.friendLeft}>
+              <View
+                style={[
+                  styles.avatarContainer,
+                  { backgroundColor: theme.colors.secondary },
+                ]}>
+                <ThemeText style={styles.avatarText}>{initial}</ThemeText>
+              </View>
+              <View>
+                <ThemeText variant="title" style={styles.friendName}>
+                  {displayName}
                 </ThemeText>
-              )}
+                {item.email && item.email !== displayName && (
+                  <ThemeText variant="caption" style={styles.friendEmail}>
+                    {item.email}
+                  </ThemeText>
+                )}
+              </View>
             </View>
+            {balance !== 0 && (
+              <View style={styles.balanceContainer}>
+                <ThemeText 
+                  variant="subtitle" 
+                  style={[
+                    styles.balanceText, 
+                    { color: balance > 0 ? theme.colors.success : theme.colors.error }
+                  ]}
+                >
+                  {balance > 0 
+                    ? `Owes you $${balance.toFixed(2)}` 
+                    : `You owe $${Math.abs(balance).toFixed(2)}`}
+                </ThemeText>
+              </View>
+            )}
           </View>
-        </View>
-      </Card>
+        </Card>
+      </TouchableOpacity>
     );
   };
 
@@ -411,6 +464,16 @@ const styles = StyleSheet.create({
   },
   modalButton: {
     marginTop: 8,
+  },
+  balanceContainer: {
+    marginTop: 8,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 4,
+  },
+  balanceText: {
+    fontWeight: '600',
   },
 });
 
