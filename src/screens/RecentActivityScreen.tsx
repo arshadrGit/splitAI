@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { 
   View, 
   StyleSheet, 
@@ -6,7 +6,9 @@ import {
   ActivityIndicator, 
   TouchableOpacity,
   Image,
-  SafeAreaView
+  SafeAreaView,
+  TextInput,
+  Keyboard
 } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState, AppDispatch } from '../redux/store';
@@ -22,12 +24,32 @@ export const RecentActivityScreen = ({ navigation }: any) => {
   const { theme } = useTheme();
   const { activities, loading } = useSelector((state: RootState) => state.activity);
   const user = useSelector((state: RootState) => state.auth.user);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showSearch, setShowSearch] = useState(false);
 
   useEffect(() => {
     if (user) {
       dispatch(fetchActivities(user.id));
     }
   }, [dispatch, user]);
+
+  // Filter activities based on search query
+  const filteredActivities = activities.filter(item => {
+    if (!searchQuery.trim()) return true;
+    
+    const query = searchQuery.toLowerCase();
+    const description = item.description?.toLowerCase() || '';
+    const groupName = item.groupName?.toLowerCase() || '';
+    const paidBy = item.paidBy?.toLowerCase() || '';
+    const paidTo = item.paidTo?.toLowerCase() || '';
+    
+    return (
+      description.includes(query) || 
+      groupName.includes(query) || 
+      paidBy.includes(query) || 
+      paidTo.includes(query)
+    );
+  });
 
   const getActivityIcon = (type: string, isGroupActivity: boolean) => {
     switch (type) {
@@ -94,10 +116,8 @@ export const RecentActivityScreen = ({ navigation }: any) => {
                 )}
                 <ThemeText variant="caption" style={styles.activityDetails}>
                   {isPayment ? 
-                    `You paid ${item.paidTo}` : 
-                    item.paidBy === user?.id ? 
-                      'You paid for everyone' : 
-                      `${item.paidBy} paid`}
+                    `${item.paidBy} paid ${item.paidTo}` : 
+                    `${item.paidBy} paid`}
                 </ThemeText>
               </View>
             </View>
@@ -117,7 +137,34 @@ export const RecentActivityScreen = ({ navigation }: any) => {
     );
   };
 
-  if (loading) {
+  const renderSearchBar = () => (
+    <View style={[styles.searchContainer, { backgroundColor: theme.colors.card }]}>
+      <Icon name="magnify" size={20} color={theme.colors.placeholder} style={styles.searchIcon} />
+      <TextInput
+        style={[styles.searchInput, { color: theme.colors.text }]}
+        placeholder="Search activities..."
+        placeholderTextColor={theme.colors.placeholder}
+        value={searchQuery}
+        onChangeText={setSearchQuery}
+        autoCapitalize="none"
+        returnKeyType="search"
+        onSubmitEditing={() => Keyboard.dismiss()}
+      />
+      {searchQuery.length > 0 && (
+        <TouchableOpacity onPress={() => setSearchQuery('')}>
+          <Icon name="close-circle" size={20} color={theme.colors.placeholder} />
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+
+  const handleRefresh = useCallback(() => {
+    if (user) {
+      dispatch(fetchActivities(user.id));
+    }
+  }, [dispatch, user]);
+
+  if (loading && activities.length === 0) {
     return (
       <View style={[styles.container, styles.centered, { backgroundColor: theme.colors.background }]}>
         <ActivityIndicator size="large" color={theme.colors.primary} />
@@ -129,27 +176,52 @@ export const RecentActivityScreen = ({ navigation }: any) => {
     <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <Header 
         title="Recent Activity" 
-        rightIcon="refresh" 
-        onRightPress={() => user && dispatch(fetchActivities(user.id))}
+        rightIcon={showSearch ? "close" : "magnify"}
+        onRightPress={() => {
+          setShowSearch(!showSearch);
+          if (showSearch) {
+            setSearchQuery('');
+          }
+        }}
+        secondaryRightIcon="refresh"
+        onSecondaryRightPress={handleRefresh}
       />
       
-      {activities.length === 0 ? (
+      {showSearch && renderSearchBar()}
+      
+      {filteredActivities.length === 0 ? (
         <View style={styles.emptyState}>
-          <Icon 
-            name="history" 
-            size={64} 
-            color={theme.colors.placeholder}
-          />
-          <ThemeText variant="title" style={styles.emptyTitle}>No Recent Activity</ThemeText>
-          <ThemeText style={styles.emptyText}>Your recent transactions will appear here</ThemeText>
+          {searchQuery ? (
+            <>
+              <Icon 
+                name="file-search-outline" 
+                size={64} 
+                color={theme.colors.placeholder}
+              />
+              <ThemeText variant="title" style={styles.emptyTitle}>No Results Found</ThemeText>
+              <ThemeText style={styles.emptyText}>Try a different search term</ThemeText>
+            </>
+          ) : (
+            <>
+              <Icon 
+                name="history" 
+                size={64} 
+                color={theme.colors.placeholder}
+              />
+              <ThemeText variant="title" style={styles.emptyTitle}>No Recent Activity</ThemeText>
+              <ThemeText style={styles.emptyText}>Your recent transactions will appear here</ThemeText>
+            </>
+          )}
         </View>
       ) : (
         <FlatList
-          data={activities}
+          data={filteredActivities}
           renderItem={renderActivityItem}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
+          refreshing={loading}
+          onRefresh={handleRefresh}
         />
       )}
     </SafeAreaView>
@@ -228,6 +300,24 @@ const styles = StyleSheet.create({
   emptyText: {
     textAlign: 'center',
     opacity: 0.7,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    margin: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.1)',
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    height: 40,
+    fontSize: 16,
   },
 });
 

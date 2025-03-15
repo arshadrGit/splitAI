@@ -33,6 +33,41 @@ export const fetchActivities = createAsyncThunk(
   async (userId: string) => {
     const db = firestore();
     const activities: ActivityItem[] = [];
+    
+    // Create a cache for user display names to avoid repeated lookups
+    const userDisplayNames: Record<string, string> = {};
+    
+    // Helper function to get user display name
+    const getUserDisplayName = async (uid: string): Promise<string> => {
+      // Return from cache if available
+      if (userDisplayNames[uid]) {
+        return userDisplayNames[uid];
+      }
+      
+      // Return "You" for current user
+      if (uid === userId) {
+        userDisplayNames[uid] = 'You';
+        return 'You';
+      }
+      
+      try {
+        const userDoc = await db.collection('users').doc(uid).get();
+        if (userDoc.exists) {
+          const userData = userDoc.data();
+          const displayName = userData?.displayName || userData?.email || uid;
+          userDisplayNames[uid] = displayName;
+          return displayName;
+        }
+      } catch (error) {
+        console.warn(`Error fetching user ${uid}:`, error);
+      }
+      
+      // Fallback to user ID prefix if lookup fails
+      // const shortId = uid.substring(0, 8);
+      const shortId = uid;
+      userDisplayNames[uid] = `User ${shortId}`;
+      return `User ${shortId}`;
+    };
 
     // Fetch all expenses where the user is involved (either paid or part of splits)
     let expensesSnapshot;
@@ -85,13 +120,7 @@ export const fetchActivities = createAsyncThunk(
           }
 
           // Get payer's display name
-          let payerName = 'Unknown User';
-          try {
-            const payerDoc = await db.collection('users').doc(expense.paidBy).get();
-            payerName = payerDoc.exists ? (payerDoc.data()?.displayName || 'Unknown User') : 'Unknown User';
-          } catch (userError) {
-            console.warn(`Could not fetch user ${expense.paidBy}:`, userError);
-          }
+          const payerName = await getUserDisplayName(expense.paidBy);
 
           activities.push({
             id: doc.id,
@@ -101,7 +130,7 @@ export const fetchActivities = createAsyncThunk(
             groupId: expense.groupId,
             groupName: groupDoc?.data()?.name,
             userId: userId,
-            paidBy: paidByUser ? 'You' : payerName,
+            paidBy: payerName,
             createdAt: expense.createdAt?.toDate() || new Date(),
             isGroupActivity: !!expense.groupId,
             balance: balance
@@ -120,14 +149,8 @@ export const fetchActivities = createAsyncThunk(
         const isPayer = payment.payerId === userId;
 
         // Get the other party's name
-        let otherPartyName = 'Unknown User';
-        try {
-          const otherPartyId = isPayer ? payment.payeeId : payment.payerId;
-          const otherPartyDoc = await db.collection('users').doc(otherPartyId).get();
-          otherPartyName = otherPartyDoc.exists ? (otherPartyDoc.data()?.displayName || 'Unknown User') : 'Unknown User';
-        } catch (userError) {
-          console.warn('Could not fetch other party:', userError);
-        }
+        const otherPartyId = isPayer ? payment.payeeId : payment.payerId;
+        const otherPartyName = await getUserDisplayName(otherPartyId);
 
         activities.push({
           id: doc.id,

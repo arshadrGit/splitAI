@@ -8,16 +8,20 @@ interface HeaderProps {
   title: string;
   leftIcon?: string;
   rightIcon?: string;
+  secondaryRightIcon?: string;
   onLeftPress?: () => void;
   onRightPress?: () => void;
+  onSecondaryRightPress?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   title,
   leftIcon,
   rightIcon,
+  secondaryRightIcon,
   onLeftPress,
   onRightPress,
+  onSecondaryRightPress,
 }) => {
   const { theme } = useTheme();
 
@@ -33,13 +37,21 @@ export const Header: React.FC<HeaderProps> = ({
 
       <ThemeText variant="title" style={styles.title}>{title}</ThemeText>
 
-      {rightIcon ? (
-        <TouchableOpacity style={styles.iconButton} onPress={onRightPress}>
-          <Icon name={rightIcon} size={24} color={theme.colors.text} />
-        </TouchableOpacity>
-      ) : (
-        <View style={styles.iconPlaceholder} />
-      )}
+      <View style={styles.rightContainer}>
+        {secondaryRightIcon && (
+          <TouchableOpacity style={styles.iconButton} onPress={onSecondaryRightPress}>
+            <Icon name={secondaryRightIcon} size={24} color={theme.colors.text} />
+          </TouchableOpacity>
+        )}
+        
+        {rightIcon ? (
+          <TouchableOpacity style={styles.iconButton} onPress={onRightPress}>
+            <Icon name={rightIcon} size={24} color={theme.colors.text} />
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.iconPlaceholder} />
+        )}
+      </View>
     </View>
   );
 };
@@ -72,5 +84,9 @@ const styles = StyleSheet.create({
   },
   iconPlaceholder: {
     width: 40,
+  },
+  rightContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
 }); 
