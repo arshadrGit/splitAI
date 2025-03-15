@@ -1,7 +1,7 @@
 export type RootStackParamList = {
   Home: undefined;
   AddExpense: {
-    groupId: string;
+    groupId?: string;
   };
   GroupDetail: {
     groupId: string;
@@ -11,4 +11,5 @@ export type RootStackParamList = {
   PrivacyPolicy: undefined;
   HelpAndSupport: undefined;
   About: undefined;
+  ExpensesMain: undefined;
 }; 

@@ -21,18 +21,24 @@ export const fetchExpenses = createAsyncThunk(
   'expenses/fetchExpenses',
   async (groupId: string) => {
     try {
-      console.log(`Fetching expenses for group ${groupId}`);
+      console.log(`Fetching expenses for ${groupId === 'all' ? 'all groups' : `group ${groupId}`}`);
       const db = firestore();
       let expensesSnapshot;
       
       try {
-        // Try with ordering (requires index)
-        expensesSnapshot = await db
-          .collection('expenses')
-          .where('groupId', '==', groupId)
-          .get();
+        // If groupId is 'all', fetch all expenses, otherwise filter by groupId
+        if (groupId === 'all') {
+          expensesSnapshot = await db
+            .collection('expenses')
+            .get();
+        } else {
+          expensesSnapshot = await db
+            .collection('expenses')
+            .where('groupId', '==', groupId)
+            .get();
+        }
           
-        console.log(`Found ${expensesSnapshot.docs.length} expenses for group ${groupId}`);
+        console.log(`Found ${expensesSnapshot.docs.length} expenses`);
       } catch (error) {
         // Log the error details without accessing error.stack
         console.error('Error fetching expenses:', 
@@ -164,6 +170,9 @@ export const addExpense = createAsyncThunk(
             totalExpenses: firestore.FieldValue.increment(params.amount)
           });
         }
+      } else {
+        // For personal expenses, we don't need to update group balances
+        console.log('Adding personal expense');
       }
 
       await batch.commit();

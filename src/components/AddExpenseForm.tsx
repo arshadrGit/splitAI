@@ -19,11 +19,12 @@ import { ThemeText } from './ThemeText';
 import { CustomButton } from './CustomButton';
 import { Card } from './Card';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import { SplitType, Split } from '../types';
+import { SplitType, Split, Friend } from '../types';
 
 interface Props {
   groupId?: string;
   participants: string[];
+  friends?: Friend[];
   onSuccess?: () => void;
   onCancel?: () => void;
 }
@@ -31,6 +32,7 @@ interface Props {
 export const AddExpenseForm: React.FC<Props> = ({
   groupId,
   participants,
+  friends = [],
   onSuccess,
   onCancel
 }) => {
@@ -51,6 +53,18 @@ export const AddExpenseForm: React.FC<Props> = ({
     { type: 'EXACT', label: 'Split by Amount', icon: 'currency-usd' },
     { type: 'PERCENTAGE', label: 'Split by Percentage', icon: 'percent' },
   ];
+
+  // Get display name for a user ID
+  const getDisplayName = (userId: string) => {
+    if (userId === user?.id) return 'You';
+    
+    // Check in friends list
+    const friend = friends.find(f => f.friendId === userId || f.id === userId);
+    if (friend?.displayName) return friend.displayName;
+    
+    // If not found, just return the ID
+    return userId;
+  };
 
   const handleSubmit = async () => {
     if (!description.trim()) {
@@ -105,7 +119,7 @@ export const AddExpenseForm: React.FC<Props> = ({
         description,
         amount: numAmount,
         paidBy: selectedPaidBy,
-        groupId,
+        groupId: groupId || null,
         splitType,
         participants,
         splits,
@@ -153,7 +167,7 @@ export const AddExpenseForm: React.FC<Props> = ({
       {participants.map(userId => (
         <View key={userId} style={styles.splitRow}>
           <ThemeText style={styles.participantName}>
-            {userId === user?.id ? 'You' : userId}
+            {getDisplayName(userId)}
           </ThemeText>
           <TextInput
             style={[styles.splitInput, { color: theme.colors.text, borderColor: theme.colors.border }]}
@@ -174,6 +188,20 @@ export const AddExpenseForm: React.FC<Props> = ({
     </View>
   );
 
+  // Determine who to show in the "Who paid?" modal
+  const getPaidByOptions = () => {
+    if (groupId) {
+      // If in a group, show group members
+      return participants;
+    } else if (friends.length > 0) {
+      // If no group but has friends, show user + friends
+      return [user?.id || '', ...friends.map(f => f.friendId)].filter(Boolean);
+    } else {
+      // Fallback to just participants
+      return participants;
+    }
+  };
+
   const renderPaidByModal = () => (
     <Modal
       visible={showPaidByModal}
@@ -189,7 +217,7 @@ export const AddExpenseForm: React.FC<Props> = ({
         <View style={[styles.modalContent, { backgroundColor: theme.colors.card }]}>
           <ThemeText variant="title" style={styles.modalTitle}>Who paid?</ThemeText>
           <FlatList
-            data={participants}
+            data={getPaidByOptions()}
             keyExtractor={item => item}
             renderItem={({ item: userId }) => (
               <TouchableOpacity
@@ -212,7 +240,7 @@ export const AddExpenseForm: React.FC<Props> = ({
                     styles.paidByName,
                     selectedPaidBy === userId && { color: theme.colors.primary }
                   ]}>
-                    {userId === user?.id ? 'You' : userId}
+                    {getDisplayName(userId)}
                   </ThemeText>
                 </View>
                 {selectedPaidBy === userId && (
@@ -264,7 +292,7 @@ export const AddExpenseForm: React.FC<Props> = ({
             <View style={styles.paidByContent}>
               <Icon name="account" size={24} color={theme.colors.text} />
               <ThemeText style={styles.paidByText}>
-                {selectedPaidBy === user?.id ? 'You' : selectedPaidBy || 'Select who paid'}
+                {getDisplayName(selectedPaidBy) || 'Select who paid'}
               </ThemeText>
             </View>
             <Icon name="chevron-down" size={24} color={theme.colors.text} />
@@ -297,6 +325,9 @@ export const AddExpenseForm: React.FC<Props> = ({
             }}
           />
         </View>
+        
+        {/* Add extra padding at the bottom for modal context */}
+        <View style={styles.bottomPadding} />
       </ScrollView>
       {renderPaidByModal()}
     </KeyboardAvoidingView>
@@ -424,6 +455,9 @@ const styles = StyleSheet.create({
   paidByName: {
     marginLeft: 12,
     fontSize: 16,
+  },
+  bottomPadding: {
+    height: 100,
   },
 });
 
