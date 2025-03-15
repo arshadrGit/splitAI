@@ -309,11 +309,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   listContent: {
-    padding: 16,
+    // padding: 16,
     flexGrow: 1,
   },
   groupCard: {
-    marginBottom: 12,
+    // marginBottom: 12,
+    marginHorizontal:0,
+    marginBottom: 2,
+    padding: 0,
+    paddingVertical:10,
+    paddingHorizontal:32,
+    borderRadius: 0,
   },
   groupInfo: {
     flexDirection: 'row',

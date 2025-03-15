@@ -486,7 +486,7 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
           onLeftPress={() => setShowSettleUp(false)}
         />
 
-        <View style={styles.settleUpInfo}>
+        {/* <View style={styles.settleUpInfo}>
           <ThemeText style={styles.settleUpInfoText}>
             These are the simplified payments that will settle all debts in the group with the minimum number of transactions.
           </ThemeText>
@@ -509,7 +509,7 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
               4. The app simplifies debts to minimize the number of transactions needed to settle everyone up.
             </ThemeText>
           </Card>
-        </View>
+        </View> */}
 
         <FlatList
           data={currentGroup?.simplifiedDebts || []}
@@ -764,47 +764,51 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
         <View style={styles.content}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.actionCards}>
             <Card style={styles.actionCard}>
-              <Icon 
-                name="chart-timeline-variant" 
-                size={20} 
-                color={theme.colors.primary} 
-                style={styles.actionIcon}
-              />
-              <ThemeText style={styles.actionTitle}>Total Expenses</ThemeText>
+              <View style={{flexDirection:'row'}}>
+                <Icon
+                  name="chart-timeline-variant"
+                  size={20}
+                  color={theme.colors.primary}
+                  style={styles.actionIcon}
+                />
+                <ThemeText style={styles.actionTitle}>Total Expenses</ThemeText>
+              </View>
               <ThemeText style={[styles.actionAmount, { color: theme.colors.text }]}>
                 ${(currentGroup.totalExpenses || 0).toFixed(2)}
               </ThemeText>
               <ThemeText style={styles.actionSubtext}>Group total</ThemeText>
             </Card>
 
-            <Card style={[styles.actionCard, { 
+            <Card style={[styles.actionCard, {
               borderLeftWidth: 3,
-              borderLeftColor: userBalance > 0 ? theme.colors.success : 
-                              userBalance < 0 ? theme.colors.error :
-                              theme.colors.primary
+              borderLeftColor: userBalance > 0 ? theme.colors.success :
+                userBalance < 0 ? theme.colors.error :
+                  theme.colors.primary
             }]}>
-              <Icon 
-                name={userBalance > 0 ? "arrow-down-circle" : 
-                      userBalance < 0 ? "arrow-up-circle" : 
-                      "check-circle"} 
-                size={20} 
-                color={userBalance > 0 ? theme.colors.success : 
-                       userBalance < 0 ? theme.colors.error :
-                       theme.colors.primary} 
+              <View style={{flexDirection:'row'}}>
+              <Icon
+                name={userBalance > 0 ? "arrow-down-circle" :
+                  userBalance < 0 ? "arrow-up-circle" :
+                    "check-circle"}
+                size={20}
+                color={userBalance > 0 ? theme.colors.success :
+                  userBalance < 0 ? theme.colors.error :
+                    theme.colors.primary}
                 style={styles.actionIcon}
               />
               <ThemeText style={styles.actionTitle}>Your Balance</ThemeText>
-              <ThemeText style={[styles.actionAmount, { 
-                color: userBalance > 0 ? theme.colors.success : 
-                       userBalance < 0 ? theme.colors.error :
-                       theme.colors.text
+              </View>
+              <ThemeText style={[styles.actionAmount, {
+                color: userBalance > 0 ? theme.colors.success :
+                  userBalance < 0 ? theme.colors.error :
+                    theme.colors.text
               }]}>
                 ${Math.abs(userBalance).toFixed(2)}
               </ThemeText>
               <ThemeText style={styles.actionSubtext}>
                 {userBalance > 0 ? 'You are owed' :
-                 userBalance < 0 ? 'You owe' :
-                 'All settled up'}
+                  userBalance < 0 ? 'You owe' :
+                    'All settled up'}
               </ThemeText>
             </Card>
           </ScrollView>
@@ -939,17 +943,17 @@ const styles = StyleSheet.create({
     padding: 12,
     marginRight: 10,
     width: width * 0.45,
-    height: 100,
-    borderRadius: 12,
-    backgroundColor: '#FFFFFF',
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 3,
+    height: 90,
+    // borderRadius: 12,
+    // backgroundColor: '#FFFFFF',
+    // shadowColor: "#000",
+    // shadowOffset: {
+    //   width: 0,
+    //   height: 2,
+    // },
+    // shadowOpacity: 0.08,
+    // shadowRadius: 8,
+    // elevation: 3,
   },
   actionTitle: {
     fontSize: 12,
@@ -964,10 +968,12 @@ const styles = StyleSheet.create({
   actionSubtext: {
     fontSize: 11,
     opacity: 0.6,
+    textAlign:'right'
   },
   actionIcon: {
     marginBottom: 8,
     fontSize: 18,
+    marginRight:10
   },
   expensesContainer: {
     flex: 1,
@@ -995,8 +1001,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   expenseCard: {
-    marginBottom: 12,
-    padding: 16,
+    marginBottom: 10,
+    padding: 10,
   },
   expenseHeader: {
     flexDirection: 'row',

@@ -43,6 +43,6 @@ const styles = StyleSheet.create({
     shadowColor: '#000',
     shadowOffset: { width: 1, height: 1 },
     shadowRadius: 6,
-    marginVertical: 8,
+    // marginVertical: 8,
   },
 }); 
