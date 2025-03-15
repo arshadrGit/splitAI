@@ -20,22 +20,22 @@ export const Header: React.FC<HeaderProps> = ({
   onRightPress,
 }) => {
   const { theme } = useTheme();
-  
+
   return (
-    <View style={[styles.header, { backgroundColor: theme.colors.primary }]}>
+    <View style={[styles.header, {backgroundColor: theme.colors.background, shadowColor: theme.colors.primary, }]}>
       {leftIcon ? (
         <TouchableOpacity style={styles.iconButton} onPress={onLeftPress}>
-          <Icon name={leftIcon} size={24} color="#FFFFFF" />
+          <Icon name={leftIcon} size={24} color={theme.colors.text} />
         </TouchableOpacity>
       ) : (
         <View style={styles.iconPlaceholder} />
       )}
-      
+
       <ThemeText variant="title" style={styles.title}>{title}</ThemeText>
-      
+
       {rightIcon ? (
         <TouchableOpacity style={styles.iconButton} onPress={onRightPress}>
-          <Icon name={rightIcon} size={24} color="#FFFFFF" />
+          <Icon name={rightIcon} size={24} color={theme.colors.text} />
         </TouchableOpacity>
       ) : (
         <View style={styles.iconPlaceholder} />
@@ -51,14 +51,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    elevation: 4,
-    shadowColor: '#000',
+    elevation: 1,
+    // shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 2,
   },
   title: {
-    color: '#FFFFFF',
+    // color: '#FFFFFF',
     fontWeight: 'bold',
     fontSize: 18,
     flex: 1,

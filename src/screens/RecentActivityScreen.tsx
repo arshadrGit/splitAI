@@ -5,7 +5,8 @@ import {
   FlatList, 
   ActivityIndicator, 
   TouchableOpacity,
-  Image
+  Image,
+  SafeAreaView
 } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState, AppDispatch } from '../redux/store';
@@ -125,7 +126,7 @@ export const RecentActivityScreen = ({ navigation }: any) => {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <Header 
         title="Recent Activity" 
         rightIcon="refresh" 
@@ -151,7 +152,7 @@ export const RecentActivityScreen = ({ navigation }: any) => {
           showsVerticalScrollIndicator={false}
         />
       )}
-    </View>
+    </SafeAreaView>
   );
 };
 

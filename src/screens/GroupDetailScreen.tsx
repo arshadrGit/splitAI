@@ -276,11 +276,11 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
             {isCurrentUser ? 'You' : memberId}
           </ThemeText>
         </View>
-        <ThemeText style={[styles.memberBalance, { color: balanceColor }]}>
+        {/* <ThemeText style={[styles.memberBalance, { color: balanceColor }]}>
           {balanceAmount === 0 ? 'All settled' :
             balanceAmount > 0 ? `Gets back $${Math.abs(balanceAmount).toFixed(2)}` :
               `Owes $${Math.abs(balanceAmount).toFixed(2)}`}
-        </ThemeText>
+        </ThemeText> */}
       </Card>
     );
   };
@@ -1035,6 +1035,7 @@ const styles = StyleSheet.create({
   settlementAmount: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
   },
   settlementValue: {
     fontWeight: '600',
