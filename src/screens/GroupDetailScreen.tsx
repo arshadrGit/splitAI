@@ -580,7 +580,7 @@ export const GroupDetailScreen = ({ route, navigation }: Props) => {
                   style={styles.settlementButton}
                 />
                 <CustomButton
-                  title="Record Payment"
+                  title="Payment"
                   onPress={handleRecordPayment}
                   style={styles.settlementButton}
                 />

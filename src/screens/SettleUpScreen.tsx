@@ -267,7 +267,7 @@ const SettleUpScreen: React.FC<Props> = ({ route, navigation }) => {
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: theme.colors.background }]}>
             <View style={styles.modalHeader}>
-              <ThemeText variant="title">Record Payment</ThemeText>
+              <ThemeText variant="title">Payment</ThemeText>
               <TouchableOpacity onPress={() => setShowPaymentModal(false)}>
                 <Icon name="close" size={24} color={theme.colors.text} />
               </TouchableOpacity>
@@ -301,7 +301,7 @@ const SettleUpScreen: React.FC<Props> = ({ route, navigation }) => {
                 </View>
                 
                 <CustomButton
-                  title="Record Payment"
+                  title="Payment"
                   onPress={handleRecordPayment}
                   loading={loading}
                   style={styles.recordButton}

@@ -3,6 +3,9 @@ import { useColorScheme } from 'react-native';
 import { lightTheme } from './lightTheme';
 import { darkTheme } from './darkTheme';
 import { Theme } from '../types';
+import { useDispatch, useSelector } from 'react-redux';
+import { setTheme } from '../redux/themeSlice';
+import { RootState } from '../redux/store';
 
 interface ThemeContextType {
   theme: Theme;
@@ -18,17 +21,43 @@ const ThemeContext = createContext<ThemeContextType>({
 
 export const useTheme = () => useContext(ThemeContext);
 
-export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+interface ThemeProviderProps {
+  children: React.ReactNode;
+  initialTheme?: boolean;
+}
+
+export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, initialTheme }) => {
   const deviceTheme = useColorScheme();
-  const [isDark, setIsDark] = useState(deviceTheme === 'dark');
+  const dispatch = useDispatch();
   
-  // Update theme when device theme changes
+  console.log('ThemeProvider initialTheme:', initialTheme);
+  
+  // Use initialTheme from Redux if provided, otherwise use device theme
+  const [isDark, setIsDark] = useState(() => {
+    // Log the initial theme value for debugging
+    console.log('Setting initial theme state:', {
+      initialTheme,
+      deviceTheme,
+      usingValue: initialTheme !== undefined ? initialTheme : deviceTheme === 'dark'
+    });
+    
+    return initialTheme !== undefined ? initialTheme : deviceTheme === 'dark';
+  });
+  
+  // Update local state when initialTheme changes
   useEffect(() => {
-    setIsDark(deviceTheme === 'dark');
-  }, [deviceTheme]);
+    console.log('initialTheme changed:', initialTheme);
+    if (initialTheme !== undefined && initialTheme !== isDark) {
+      console.log('Updating isDark to:', initialTheme);
+      setIsDark(initialTheme);
+    }
+  }, [initialTheme]);
   
   const toggleTheme = () => {
-    setIsDark(prev => !prev);
+    const newThemeValue = !isDark;
+    console.log('Toggling theme to:', newThemeValue);
+    setIsDark(newThemeValue);
+    dispatch(setTheme(newThemeValue));
   };
   
   const theme = isDark ? darkTheme : lightTheme;

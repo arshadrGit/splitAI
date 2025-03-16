@@ -1,17 +1,72 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, StyleSheet, ScrollView, TouchableOpacity, Alert, Switch } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
-import { RootState, AppDispatch } from '../redux/store';
+import { RootState, AppDispatch, store } from '../redux/store';
 import { useTheme } from '../themes/ThemeProvider';
 import { ThemeText } from '../components/ThemeText';
 import { Header } from '../components/Header';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { signOut } from '../redux/authSlice';
+import { toggleTheme as toggleThemeAction, setTheme } from '../redux/themeSlice';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export const SettingsScreen = ({ navigation }: any) => {
   const dispatch = useDispatch<AppDispatch>();
   const { theme, isDark, toggleTheme } = useTheme();
+  const reduxIsDark = useSelector((state: RootState) => state.theme.isDark);
   const user = useSelector((state: RootState) => state.auth.user);
+
+  // Check AsyncStorage directly on mount
+  useEffect(() => {
+    const checkStorage = async () => {
+      try {
+        const themeData = await AsyncStorage.getItem('persist:theme');
+        console.log('AsyncStorage theme data:', themeData);
+        if (themeData) {
+          const parsedData = JSON.parse(themeData);
+          console.log('Parsed theme data:', parsedData);
+          if (parsedData.isDark) {
+            const isDarkValue = JSON.parse(parsedData.isDark);
+            console.log('AsyncStorage isDark value:', isDarkValue);
+          }
+        }
+      } catch (error) {
+        console.error('Error reading AsyncStorage:', error);
+      }
+    };
+    
+    checkStorage();
+  }, []);
+
+  // Log theme state for debugging
+  useEffect(() => {
+    console.log('Theme Context isDark:', isDark);
+    console.log('Redux Theme isDark:', reduxIsDark);
+  }, [isDark, reduxIsDark]);
+
+  // Handle theme toggle with both context and Redux
+  const handleToggleTheme = () => {
+    console.log('Toggling theme from:', isDark, 'to:', !isDark);
+    
+    // Update Redux first
+    dispatch(toggleThemeAction());
+    
+    // Then update context
+    toggleTheme();
+    
+    // Verify the change was applied
+    setTimeout(() => {
+      const currentReduxTheme = store.getState().theme.isDark;
+      console.log('After toggle - Redux theme:', currentReduxTheme);
+      
+      // Force persist the state
+      import('../redux/store').then(({ persistor }) => {
+        persistor.flush().then(() => {
+          console.log('State persisted after theme toggle');
+        });
+      });
+    }, 100);
+  };
 
   const settingsOptions = [
     {
@@ -23,12 +78,12 @@ export const SettingsScreen = ({ navigation }: any) => {
     {
       title: 'Dark Theme',
       icon: isDark ? 'weather-night' : 'white-balance-sunny',
-      onPress: toggleTheme,
+      onPress: handleToggleTheme,
       description: 'Toggle dark/light theme',
       rightElement: (
         <Switch
           value={isDark}
-          onValueChange={toggleTheme}
+          onValueChange={handleToggleTheme}
           trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
           thumbColor={isDark ? theme.colors.card : '#f4f3f4'}
         />
@@ -125,6 +180,7 @@ export const SettingsScreen = ({ navigation }: any) => {
         <View style={styles.settingsList}>
           {settingsOptions.map(renderSettingItem)}
         </View>
+       
       </ScrollView>
     </View>
   );
@@ -200,6 +256,18 @@ const styles = StyleSheet.create({
   },
   settingDescription: {
     opacity: 0.7,
+  },
+  debugButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+    borderRadius: 8,
+  },
+  debugButtonText: {
+    color: '#FFFFFF',
+    marginLeft: 8,
+    fontWeight: '600',
   },
 });
 
