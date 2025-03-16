@@ -99,7 +99,7 @@ export const addExpense = createAsyncThunk(
         description: params.description,
         amount: params.amount,
         paidBy: params.paidBy,
-        groupId: params.groupId || undefined,
+        groupId: params.groupId || null,
         splitType: params.splitType,
         splits: params.splits,
         participants: params.participants,
@@ -114,9 +114,9 @@ export const addExpense = createAsyncThunk(
       const expenseRef = db.collection('expenses').doc();
       batch.set(expenseRef, {
         ...expenseData,
-        createdAt: firestore.Timestamp.fromDate(expenseData.createdAt)
+        createdAt: firestore.Timestamp.fromDate(expenseData.createdAt || new Date())
       });
-
+    
       // Update group balances if it's a group expense
       if (params.groupId) {
         const groupRef = db.collection('groups').doc(params.groupId);
@@ -145,7 +145,7 @@ export const addExpense = createAsyncThunk(
             }),
             { id: expenseRef.id, ...expenseData }
           ];
-
+       
           // Calculate new balances
           const balances = calculateBalances(params.participants, allExpenses);
           const simplifiedDebts = simplifyDebts(balances);

@@ -24,7 +24,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 type Props = NativeStackScreenProps<RootStackParamList, 'AddExpense'>;
 
 const AddExpenseScreen = ({ route, navigation }: Props) => {
-  const { groupId = '', friendId = '' } = route.params || {};
+  const { groupId = null, friendId = '' } = route.params || {};
   const { theme } = useTheme();
   const dispatch = useDispatch<AppDispatch>();
   const { currentGroup, loading: groupLoading } = useSelector((state: RootState) => state.groups);
@@ -33,7 +33,7 @@ const AddExpenseScreen = ({ route, navigation }: Props) => {
   const isFocused = useIsFocused();
 
   const [selectedParticipants, setSelectedParticipants] = useState<string[]>([]);
-  const [isPersonalExpense, setIsPersonalExpense] = useState(groupId === '');
+  const [isPersonalExpense, setIsPersonalExpense] = useState(!groupId);
   const [isFromTabBar, setIsFromTabBar] = useState(false);
   const [showFriendSelector, setShowFriendSelector] = useState(false);
 
@@ -68,7 +68,7 @@ const AddExpenseScreen = ({ route, navigation }: Props) => {
       } else {
         setSelectedParticipants(user ? [user.id] : []);
       }
-      setIsPersonalExpense(groupId === '');
+      setIsPersonalExpense(!groupId);
       setShowFriendSelector(false);
     }
   }, [isFocused, user, groupId, friendId]);

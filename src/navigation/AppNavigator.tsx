@@ -148,7 +148,7 @@ const MainTabs = () => {
           </TouchableWithoutFeedback>
           <View style={[styles.modalContent, { backgroundColor: theme.colors.background }]}>
             <AddExpenseScreen 
-              route={{ params: { groupId: '' } } as any} 
+              route={{ params: { groupId: null } } as any} 
               navigation={{ 
                 goBack: () => setShowExpenseModal(false),
                 getParent: () => null

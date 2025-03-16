@@ -46,7 +46,7 @@ export interface Expense {
   description: string;
   amount: number;
   paidBy: string;
-  groupId?: string;
+  groupId?: string | null;
   splitType: SplitType;
   splits: Split[];
   participants: string[];
