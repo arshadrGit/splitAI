@@ -259,6 +259,7 @@ export const AppNavigator = () => {
               name="FriendDetail"
               component={FriendDetailScreen}
               options={{ 
+                headerShown:false,
                 title: 'Friend Details',
                 headerBackTitle: 'Back'
               }}

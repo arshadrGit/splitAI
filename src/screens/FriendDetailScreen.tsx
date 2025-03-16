@@ -120,7 +120,7 @@ const FriendDetailScreen = ({ route, navigation }: Props) => {
           onRightPress={() => navigation.navigate('AddExpense', { friendId })}
         />
 
-        <View style={styles.balanceCard}>
+        <Card style={styles.balanceCard}>
           <ThemeText variant="title" style={styles.balanceTitle}>
             {totalOwed > 0 
               ? `${friendName} owes you` 
@@ -147,7 +147,7 @@ const FriendDetailScreen = ({ route, navigation }: Props) => {
             <Icon name="handshake" size={20} color="#FFFFFF" />
             <ThemeText style={styles.settleButtonText}>Settle Up</ThemeText>
           </TouchableOpacity>
-        </View>
+        </Card>
 
         {loading ? (
           <ActivityIndicator size="large" color={theme.colors.primary} style={styles.loader} />
@@ -183,15 +183,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   balanceCard: {
-    padding: 20,
+    padding: 10,
     margin: 16,
     borderRadius: 12,
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    // backgroundColor: '#FFFFFF',
+    // shadowColor: '#000',
+    // shadowOffset: { width: 0, height: 2 },
+    // shadowOpacity: 0.1,
+    // shadowRadius: 4,
+    // elevation: 3,
     alignItems: 'center',
   },
   balanceTitle: {

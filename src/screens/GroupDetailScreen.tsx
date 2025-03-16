@@ -31,6 +31,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { auth } from '../firebase/firebaseConfig';
 import { useIsFocused } from '@react-navigation/native';
+import { lightTheme } from '../themes/lightTheme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'GroupDetail'>;
 
@@ -1111,7 +1112,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   viewAllText: {
-    color: '#007AFF',
+    color: lightTheme.colors.primary,
     fontWeight: '600',
   },
   modalOverlay: {
