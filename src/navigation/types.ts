@@ -10,7 +10,7 @@ export type RootStackParamList = {
   MainTabs: undefined;
   GroupMembers: { groupId: string };
   GroupDetail: { groupId: string; groupName: string };
-  AddExpense: { groupId?: string; friendId?: string };
+  AddExpense: { groupId?: string | null; friendId?: string };
   SettleUp: { groupId: string };
   
   // Tab Stacks
@@ -31,5 +31,8 @@ export type RootStackParamList = {
   FriendDetail: {
     friendId: string;
     friendName: string;
+  };
+  ActivityDetail: {
+    activityId: string;
   };
 }; 

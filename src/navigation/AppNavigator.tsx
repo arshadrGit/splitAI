@@ -28,6 +28,7 @@ import PrivacyPolicyScreen from '../screens/PrivacyPolicyScreen';
 import AboutScreen from '../screens/AboutScreen';
 import ExpensesScreen from '../screens/ExpensesScreen';
 import FriendDetailScreen from '../screens/FriendDetailScreen';
+import ActivityDetailScreen from '../screens/ActivityDetailScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator();
@@ -234,6 +235,7 @@ export const AppNavigator = () => {
               name="GroupDetail"
               component={GroupDetailScreen}
               options={{ 
+                headerShown:false,
                 title: 'Group Details',
                 headerBackTitle: 'Back'
               }}
@@ -262,6 +264,13 @@ export const AppNavigator = () => {
                 headerShown:false,
                 title: 'Friend Details',
                 headerBackTitle: 'Back'
+              }}
+            />
+            <Stack.Screen
+              name="ActivityDetail"
+              component={ActivityDetailScreen}
+              options={{ 
+                headerShown: false
               }}
             />
           </>

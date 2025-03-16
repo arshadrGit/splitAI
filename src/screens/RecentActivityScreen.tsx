@@ -18,8 +18,12 @@ import { ThemeText } from '../components/ThemeText';
 import { Card } from '../components/Card';
 import { Header } from '../components/Header';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../navigation/types';
 
-export const RecentActivityScreen = ({ navigation }: any) => {
+type Props = NativeStackScreenProps<RootStackParamList>;
+
+export const RecentActivityScreen = ({ navigation }: Props) => {
   const dispatch = useDispatch<AppDispatch>();
   const { theme } = useTheme();
   const { activities, loading } = useSelector((state: RootState) => state.activity);
@@ -86,9 +90,7 @@ export const RecentActivityScreen = ({ navigation }: any) => {
     return (
       <TouchableOpacity 
         onPress={() => {
-          if (item.groupId) {
-            navigation.navigate('GroupDetails', { groupId: item.groupId });
-          }
+          navigation.navigate('ActivityDetail', { activityId: item.id });
         }}
       >
         <Card style={styles.activityCard}>
